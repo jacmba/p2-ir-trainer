@@ -42,6 +42,12 @@ setTimeout(() => {
       for (let i = 0; i < 30; i++) { click($('[data-view="cabina"]')); click($(`[data-tab="${tab}"]`)); $('#nin').value = '12,4'; click($('#chk')); if ($('#fb .feedback')) ok++; }
       console.log(tab, ok, '|', $('#fb .feedback').textContent.slice(0, 100)); must(ok === 30, tab);
     }
+    // simulador: cada modo crea un caso, el instructor da la instrucción y los datos se actualizan
+    click($('[data-view="simulador"]'));
+    for (const k of ['inb', 'outb', 'hold', 'arc', 'ils', 'cont']) { click($(`#smode [data-k="${k}"]`)); must($('#slog .lg') && $('#sinstr .sim-clr'), 'sim ' + k); }
+    click($('#sinst [data-k="cdi"]')); must($('#ci0'), 'DG + CDI'); click($('#sinst [data-k="hsi"]')); must(!$('#ci0'), 'HSI');
+    console.log('simulador:', $('#sinstr .sim-clr').textContent.slice(0, 80));
+    click($('[data-view="temario"]'));
   } catch (e) { fail++; console.log('EXC', e.stack); }
   console.log('errores JS', errs.length ? errs : 'ninguno'); process.exit(fail || errs.length ? 1 : 0);
 }, 300);

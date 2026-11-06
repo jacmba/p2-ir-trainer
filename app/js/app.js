@@ -100,13 +100,14 @@
 
   // ---------- navegación ----------
   let state = { view: 'temario', topic: null };
-  let keyHandler = null;
+  let keyHandler = null, unmount = null;
   function go(view, extra) {
     state = Object.assign({ view }, extra || {});
     keyHandler = null;
+    if (unmount) { unmount(); unmount = null; }
     $$('#nav button').forEach(b => b.setAttribute('aria-current', b.dataset.view === view ? 'page' : 'false'));
     store.set('view', view);
-    ({ temario: viewTemario, resumenes: viewResumenes, flashcards: viewFlash, test: viewTest, cabina: viewCabina, chuleta: viewChuleta })[view]();
+    ({ temario: viewTemario, resumenes: viewResumenes, flashcards: viewFlash, test: viewTest, cabina: viewCabina, simulador: viewSim, chuleta: viewChuleta })[view]();
     try { window.scrollTo(0, 0); } catch (e) { /* entorno sin scroll */ }
   }
   $$('#nav button').forEach(b => b.addEventListener('click', () => go(b.dataset.view)));
@@ -594,6 +595,9 @@
       'Nuevo tiempo de alejamiento (segundos)', out, 0.5, over ? `Sobran ${t - 60} s: la mitad (${(t - 60) / 2} s) se resta → ${out} s (${R.mmss(out)}).` : `Faltan ${60 - t} s: el doble (${(60 - t) * 2} s) se suma → ${out} s (${R.mmss(out)}).`, () => timingTrainer(box));
   }
 
+  // ---------- SIMULADOR ----------
+  function viewSim() { unmount = window.P2_SIM.mount(VIEW, { store }); }
+
   // ---------- CHULETA ----------
   function viewChuleta() {
     VIEW.innerHTML = `<div class="view-head"><div><div class="eyebrow">Tablas de bolsillo</div><h1>Chuleta</h1>
@@ -601,7 +605,7 @@
   }
 
   // ---------- arranque ----------
-  const tokens = ['temario', 'resumenes', 'flashcards', 'test', 'cabina', 'chuleta'];
+  const tokens = ['temario', 'resumenes', 'flashcards', 'test', 'cabina', 'simulador', 'chuleta'];
   const h = (location.hash || '').slice(1);
   if (tokens.includes(h)) go(h);
   else if (h.startsWith('t-') && topicById[h.slice(2)]) go('temario', { topic: h.slice(2) });
