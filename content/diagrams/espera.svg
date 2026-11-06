@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 350" font-family="DejaVu Sans, Arial, sans-serif">
+  <rect width="760" height="350" fill="#f8fafc"/>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1e3a8a"/></marker></defs>
+  <text x="20" y="28" font-size="15" font-weight="bold" fill="#0f172a">Circuito de espera estándar (virajes por la derecha)</text>
+  <text x="300" y="66" font-size="14" font-weight="bold" fill="#b91c1c">LADO OPUESTO A LA ESPERA</text>
+  <line x1="40" y1="80" x2="720" y2="80" stroke="#cbd5e1" stroke-dasharray="3 4"/>
+  <path d="M190,120 L540,120" stroke="#1e3a8a" stroke-width="4" fill="none" marker-end="url(#a)"/>
+  <path d="M550,120 A60,60 0 0 1 550,240" stroke="#1e3a8a" stroke-width="2.5" fill="none" stroke-dasharray="7 5"/>
+  <path d="M550,240 L200,240" stroke="#1e3a8a" stroke-width="2.5" fill="none" stroke-dasharray="7 5" marker-end="url(#a)"/>
+  <path d="M190,240 A60,60 0 0 1 190,120" stroke="#1e3a8a" stroke-width="2.5" fill="none" stroke-dasharray="7 5"/>
+  <polygon points="550,108 561,114 561,126 550,132 539,126 539,114" fill="#fff" stroke="#0f172a" stroke-width="2"/>
+  <circle cx="550" cy="120" r="3" fill="#0f172a"/>
+  <text x="740" y="112" text-anchor="end" font-size="13" font-weight="bold" fill="#0f172a">PUNTO DE REFERENCIA</text>
+  <text x="740" y="127" text-anchor="end" font-size="12" fill="#0f172a">(fijo: VOR, NDB o fijo)</text>
+  <text x="215" y="108" font-size="13" font-weight="bold" fill="#1e3a8a">ACERCAMIENTO · curso · 1 min</text>
+  <text x="230" y="266" font-size="13" fill="#1e3a8a">ALEJAMIENTO · rumbo paralelo · 1 min</text>
+  <line x1="550" y1="228" x2="550" y2="252" stroke="#b45309" stroke-width="2"/>
+  <text x="540" y="284" text-anchor="end" font-size="12.5" fill="#b45309">A LA CUADRA: empieza el crono</text>
+  <text x="540" y="299" text-anchor="end" font-size="11.5" fill="#b45309">(o al nivelar alas, lo último)</text>
+  <text x="40" y="176" font-size="12" fill="#475569">EXTREMO DEL</text>
+  <text x="40" y="191" font-size="12" fill="#475569">ALEJAMIENTO</text>
+  <text x="625" y="176" font-size="12" fill="#475569">EXTREMO DEL</text>
+  <text x="625" y="191" font-size="12" fill="#475569">FIJO</text>
+  <text x="320" y="185" font-size="14" font-weight="bold" fill="#15803d">LADO ESPERA</text>
+  <text x="20" y="326" font-size="12" fill="#475569">Máx.: hélice 175 KIAS · reactores 200 (≤ 6 000 ft) · 230 (6 001 ft–FL140) · 265 (&gt; FL140).</text>
+  <text x="20" y="343" font-size="12" fill="#475569">No estándar: el mismo circuito con virajes por la izquierda (queda al otro lado del acercamiento).</text>
+</svg>

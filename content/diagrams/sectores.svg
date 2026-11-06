@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 420" font-family="DejaVu Sans, Arial, sans-serif">
+  <rect width="760" height="420" fill="#f8fafc"/>
+  <text x="20" y="28" font-size="15" font-weight="bold" fill="#0f172a">Sectores de entrada sobre el indicador de rumbo (rumbo actual arriba)</text>
+  <g transform="translate(200,225) scale(0.85)">
+    <path d="M0,0 L0,-140 A140,140 0 0 0 -131.6,47.9 Z" fill="#2563eb" opacity=".78"/>
+    <path d="M0,0 L0,-140 A140,140 0 0 1 131.6,-47.9 Z" fill="#eab308" opacity=".85"/>
+    <path d="M0,0 L131.6,-47.9 A140,140 0 0 1 -131.6,47.9 Z" fill="#dc2626" opacity=".78"/>
+    <circle r="140" fill="none" stroke="#0f172a" stroke-width="2"/>
+    <path d="M0,-152 l-8,-14 h16 z" fill="#0f172a"/>
+    <text x="0" y="-172" text-anchor="middle" font-size="12" font-weight="bold" fill="#0f172a">RUMBO ACTUAL</text>
+    <text x="-68" y="-40" text-anchor="middle" font-size="14" font-weight="bold" fill="#fff">A · PARALELA</text>
+    <text x="-68" y="-22" text-anchor="middle" font-size="13" fill="#fff">110°</text>
+    <text x="52" y="-80" text-anchor="middle" font-size="13" font-weight="bold" fill="#0f172a">B · GOTA</text>
+    <text x="52" y="-63" text-anchor="middle" font-size="13" fill="#0f172a">70°</text>
+    <text x="10" y="72" text-anchor="middle" font-size="14" font-weight="bold" fill="#fff">C · DIRECTA</text>
+    <text x="10" y="90" text-anchor="middle" font-size="13" fill="#fff">180°</text>
+    <text x="0" y="168" text-anchor="middle" font-size="13" font-weight="bold" fill="#0f172a">Circuito ESTÁNDAR</text>
+  </g>
+  <g transform="translate(560,225) scale(0.85)">
+    <path d="M0,0 L0,-140 A140,140 0 0 1 131.6,47.9 Z" fill="#2563eb" opacity=".78"/>
+    <path d="M0,0 L0,-140 A140,140 0 0 0 -131.6,-47.9 Z" fill="#eab308" opacity=".85"/>
+    <path d="M0,0 L-131.6,-47.9 A140,140 0 0 0 131.6,47.9 Z" fill="#dc2626" opacity=".78"/>
+    <circle r="140" fill="none" stroke="#0f172a" stroke-width="2"/>
+    <path d="M0,-152 l-8,-14 h16 z" fill="#0f172a"/>
+    <text x="0" y="-172" text-anchor="middle" font-size="12" font-weight="bold" fill="#0f172a">RUMBO ACTUAL</text>
+    <text x="68" y="-40" text-anchor="middle" font-size="14" font-weight="bold" fill="#fff">A · PARALELA</text>
+    <text x="68" y="-22" text-anchor="middle" font-size="13" fill="#fff">110°</text>
+    <text x="-52" y="-80" text-anchor="middle" font-size="13" font-weight="bold" fill="#0f172a">B · GOTA</text>
+    <text x="-52" y="-63" text-anchor="middle" font-size="13" fill="#0f172a">70°</text>
+    <text x="-10" y="72" text-anchor="middle" font-size="14" font-weight="bold" fill="#fff">C · DIRECTA</text>
+    <text x="-10" y="90" text-anchor="middle" font-size="13" fill="#fff">180°</text>
+    <text x="0" y="168" text-anchor="middle" font-size="13" font-weight="bold" fill="#0f172a">Circuito NO ESTÁNDAR</text>
+  </g>
+  <text x="380" y="410" text-anchor="middle" font-size="12" fill="#475569">Pon el HDG bug en el rumbo de ALEJAMIENTO y mira en qué sector cae · ±10° de flexibilidad en los límites</text>
+</svg>

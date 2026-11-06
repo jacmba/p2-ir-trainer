@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 330" font-family="DejaVu Sans, Arial, sans-serif">
+  <rect width="760" height="330" fill="#f8fafc"/>
+  <text x="20" y="28" font-size="15" font-weight="bold" fill="#0f172a">Leer el HSI (en final de un ILS)</text>
+  <g transform="translate(170,180)">
+    <circle r="120" fill="#111a22" stroke="#3b4b58" stroke-width="3"/>
+    <path d="M0,-132 l-8,-12 h16 z" fill="#f59e0b"/>
+    <g stroke="#e8eef3" stroke-width="2"><line x1="0" y1="-118" x2="0" y2="-100"/><line x1="118" y1="0" x2="100" y2="0"/><line x1="0" y1="118" x2="0" y2="100"/><line x1="-118" y1="0" x2="-100" y2="0"/></g>
+    <path d="M0,-96 l-10,18 h20 z" fill="#22d3ee"/><line x1="0" y1="-78" x2="0" y2="-55" stroke="#22d3ee" stroke-width="5"/>
+    <line x1="0" y1="55" x2="0" y2="92" stroke="#22d3ee" stroke-width="5"/>
+    <g fill="none" stroke="#e8eef3" stroke-width="1.5"><circle cx="-50" r="5"/><circle cx="-25" r="5"/><circle cx="25" r="5"/><circle cx="50" r="5"/></g>
+    <line x1="25" y1="-52" x2="25" y2="52" stroke="#22d3ee" stroke-width="5"/>
+    <path d="M0,-12 v24 M-16,0 h32 M-7,14 h14" stroke="#f59e0b" stroke-width="3"/>
+    <path d="M40,-40 l10,-14 l10,14 z" fill="#e8eef3"/>
+    <g fill="none" stroke="#e8eef3" stroke-width="1.5"><circle cx="104" cy="-40" r="4"/><circle cx="104" cy="-20" r="4"/><circle cx="104" cy="20" r="4"/><circle cx="104" cy="40" r="4"/></g>
+    <path d="M96,22 l8,-6 l8,6 l-8,6 z" fill="#f472b6"/>
+  </g>
+  <g font-size="12.5" fill="#0f172a">
+    <text x="330" y="70" font-weight="bold">Puntero de curso (cian)</text><text x="330" y="86" fill="#475569">curso seleccionado; su cola es el recíproco</text>
+    <text x="330" y="114" font-weight="bold">Barra de desviación</text><text x="330" y="130" fill="#475569">a la derecha → el curso está a tu derecha: corrige hacia ella</text>
+    <text x="330" y="158" font-weight="bold">Triángulo TO/FROM</text><text x="330" y="174" fill="#475569">hacia la flecha = TO · hacia la cola = FROM</text>
+    <text x="330" y="202" font-weight="bold">Puntero de senda (rosa)</text><text x="330" y="218" fill="#475569">por debajo del centro → estás ALTO: más descenso</text>
+    <text x="330" y="246" font-weight="bold">Banderas</text><text x="330" y="262" fill="#475569">NAV sin señal · HDG compás averiado · GS sin senda</text>
+    <text x="330" y="290" font-weight="bold">Avión fijo</text><text x="330" y="306" fill="#475569">la barra muestra el curso respecto del avión</text>
+  </g>
+</svg>
