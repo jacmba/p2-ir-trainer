@@ -36,17 +36,44 @@
       const elev = deg(Math.atan2(ac.alt - 50, dGs));
       const behind = lineDev(ac, nav.thr, nav.crs).from; // ya pasado el umbral
       return { dots: clamp(-ld.ang / 1.25, -2.5, 2.5), angDev: ld.ang, to: true, dme: dThr, brg: bearing(ac, nav.thr),
-        gs: s.gsFail || behind ? null : clamp(-(elev - 3) / 0.35, -2.5, 2.5), gsDev: elev - 3, ils: true };
+        gs: s.gsFail || behind ? null : clamp(-(elev - 3) / 0.35, -2.5, 2.5), gsDev: elev - 3, ils: true, vert: true, crs: nav.crs };
+    }
+    if (nav.kind === 'gps') { // tramo activo entre wps[leg-1] y wps[leg]; CDI lineal en NM
+      const a = nav.wps[s.leg - 1], b = nav.wps[s.leg], legCrs = bearing(a, b), d = lineDev(ac, a, legCrs);
+      const dFaf = dist(ac, nav.wps[nav.faf]), onFinal = s.leg > nav.faf || (s.leg === nav.faf && dFaf <= 2);
+      const fs = onFinal ? 0.3 : (dist(ac, nav.thr) <= 30 ? 1 : 5);
+      const out = { dots: clamp(-d.right / (fs / 2), -2.5, 2.5), xtk: d.right, fs, mode: onFinal ? 'APP' : fs === 1 ? 'TERM' : 'ENR', to: true, dme: dist(ac, b), brg: bearing(ac, b),
+        gs: null, ils: false, gps: true, crs: legCrs, wp: b.id, vert: false };
+      if (nav.lpv && s.leg >= nav.faf) {
+        const dGs = Math.max(0.05, dist(ac, nav.gsRef)) * FT_NM, elev = deg(Math.atan2(ac.alt - 50, dGs));
+        out.vert = true; out.gs = lineDev(ac, nav.thr, nav.crs).from ? null : clamp(-(elev - 3) / 0.35, -2.5, 2.5); out.gsDev = elev - 3;
+      }
+      return out;
     }
     const st = nav.st, d = lineDev(ac, st, s.obs);
-    return { dots: clamp(-d.ang / 5, -2.5, 2.5), angDev: d.ang, to: !d.from, dme: dist(ac, st), brg: bearing(ac, st), radial: bearing(st, ac), gs: null, ils: false };
+    return { dots: clamp(-d.ang / 5, -2.5, 2.5), angDev: d.ang, to: !d.from, dme: dist(ac, st), brg: bearing(ac, st), radial: bearing(st, ac), gs: null, ils: false, crs: s.obs };
+  }
+  // secuencia automática del GPS: al pasar la perpendicular del punto activo, pasa al tramo siguiente
+  function gpsSequence(s, say) {
+    const nav = s.nav; if (nav.kind !== 'gps' || s.leg >= nav.wps.length - 1) return;
+    const a = nav.wps[s.leg - 1], b = nav.wps[s.leg], c = lineDev(s.ac, b, bearing(a, b));
+    if (c.from) { s.leg++; const nb = nav.wps[s.leg]; say('info', `GPS: ${b.id} secuenciado. Tramo activo a ${nb.id}, derrota ${H(bearing(b, nb))}.`); }
   }
 
   // ---------- casos ----------
   const VORS = R.VORS;
   const TYPES = {
-    inb: 'Radial en acercamiento', outb: 'Radial en alejamiento', hold: 'Espera', arc: 'Arco DME', ils: 'Aproximación ILS'
+    sid: 'Salida (SID)', inb: 'Radial en acercamiento', outb: 'Radial en alejamiento', rev: 'Viraje reglamentario', hold: 'Espera', arc: 'Arco DME',
+    ils: 'Aproximación ILS', vor: 'Aproximación VOR/DME', rnav: 'Aproximación RNAV'
   };
+  // aviones: IAS de crucero, aproximación y ascenso; límites del selector
+  const SIM_AC = {
+    c172: { name: 'Cessna 172', kind: 'hélice', prop: true, cruise: 105, app: 85, climb: 75, min: 60, max: 125 },
+    b350: { name: 'King Air 350', kind: 'turbohélice', prop: true, cruise: 200, app: 130, climb: 140, min: 100, max: 245 },
+    c510: { name: 'Citation Mustang', kind: 'reactor', prop: false, cruise: 230, app: 120, climb: 160, min: 95, max: 250 }
+  };
+  const tasOf = (ias, alt) => ias * (1 + 0.02 * Math.max(0, alt) / 1000); // regla rápida: +2 % por cada 1 000 ft
+  const sqRandom = () => '' + rint(1, 6) + rint(0, 7) + rint(0, 7) + rint(1, 7);
   function placeOn(st, radial, d) { return { x: st.x + d * Math.sin(rad(radial)), y: st.y + d * Math.cos(rad(radial)) }; }
 
   // punto (NM sobre el curso, + = pasada la estación) donde la trayectoria P + rumbo h corta la línea por st con dirección C
@@ -125,7 +152,7 @@
     let inb, h, right;
     do { inb = rint(0, 35) * 10; h = rint(0, 71) * 5; right = Math.random() < 0.65; } while (R.holdBoundaryDist(h, inb, right) < 15);
     const pos = placeOn(st, recip(h), rint(6, 8));
-    const entry = R.holdEntry(h, inb, right), alt = pick([4000, 5000, 6000]);
+    const entry = R.holdEntry(h, inb, right), alt = pick([4000, 5000, 6000, 8000]);
     const instr = `Espere sobre ${st.id}, curso de acercamiento ${H(inb)}, virajes por la ${right ? 'derecha' : 'izquierda'}, ${alt.toLocaleString('es-ES')} ft`;
     return {
       type: 'hold', title: instr, nav: { kind: 'vor', st }, ac: { x: pos.x, y: pos.y, hdg: h, alt }, altAssigned: alt, obs: 360,
@@ -138,12 +165,16 @@
   function evHold(o) {
     const O = recip(o.inb);
     const tdH = R.teardropHeading(o.inb, o.right);
-    let phase = 'app', minD = 99, tFix = 0, judged = false, estT = null, turned = 0, prevH = null, obsWarned = false, altWarn = 0, stable = 0;
+    let phase = 'app', minD = 99, tFix = 0, judged = false, estT = null, turned = 0, prevH = null, spdT = 0, spdWarned = false, obsWarned = false, altWarn = 0, stable = 0;
     const names = { directa: 'directa', paralela: 'paralela', gota: 'en gota' };
     return (s, n, dt, say) => {
       if (!obsWarned && s.t > 25 && diff(s.obs, o.inb) > 2) { obsWarned = true; say('tip', `Pon ${H(o.inb)} (curso de acercamiento) en el OBS.`); }
       if (Math.abs(s.ac.alt - s.altAssigned) > 300 && s.t - altWarn > 60) { altWarn = s.t; say('warn', `Mantén ${s.altAssigned.toLocaleString('es-ES')} ft en la espera.`); }
       const d = n.dme;
+      // velocidad máxima en espera (tabla del curso) desde 3 NM antes del fijo
+      const vmax = R.holdMaxSpeed(s.ac.alt, s.acType.prop);
+      if ((phase !== 'app' || d < 3) && s.ac.ias > vmax + 3) spdT += dt; else spdT = 0;
+      if (spdT > 8 && !spdWarned) { spdWarned = true; s.penal += 15; say('bad', `${Math.round(s.ac.ias)} KIAS: en espera, ${s.acType.prop ? 'un avión de hélice no pasa de 175 KIAS' : `un reactor a ${Math.round(s.ac.alt).toLocaleString('es-ES')} ft no pasa de ${vmax} KIAS`}. Reduce antes del fijo.`); }
       // giro acumulado (+ derecha) desde que se está a menos de 1 NM del fijo
       if (d < 1 || phase !== 'app') { if (prevH != null) turned += n180(s.ac.hdg - prevH); prevH = s.ac.hdg; }
       if (phase === 'app') {
@@ -264,7 +295,7 @@
     const gsFail = Math.random() < 0.25, id = 'I' + pick(VORS).slice(0, 3);
     const alt = 3000;
     return {
-      type: 'ils', title: `ILS pista ${rwy}`, nav: { kind: 'ils', id, thr, loc, gsRef, crs }, ac: { x: pos.x, y: pos.y, hdg, alt }, altAssigned: alt, obs: crs, gsFail: false, gsFailPlan: gsFail,
+      type: 'ils', title: `ILS pista ${rwy}`, nav: { kind: 'ils', id, thr, loc, gsRef, crs }, ac: { x: pos.x, y: pos.y, hdg, alt }, altAssigned: alt, obs: crs, gsFail: false, gsFailPlan: gsFail, speed: 'app',
       brief: `Rumbo ${H(hdg)}, mantenga 3 000 ft hasta establecido en el localizador, autorizado aproximación ILS pista ${rwy} (curso ${H(crs)}°, ${id}). DA 200 ft.`,
       hint: 'Senda de 3°: razón ≈ GS × 5,3 (a 120 kt, unos 640 ft/min). No desciendas hasta estar establecido en el localizador; corrige siempre hacia las agujas.',
       draw: { ils: { thr, crs, loc } },
@@ -294,17 +325,227 @@
       return null;
     };
   }
-  const MAKERS = { inb: () => caseRadial(true), outb: () => caseRadial(false), hold: caseHold, arc: caseArc, ils: caseILS };
+
+  // Viraje reglamentario (inversión de curso 45°/180°)
+  function caseRev() {
+    const st = { x: 0, y: 0, id: pick(VORS) }, C = rint(0, 35) * 10, right = Math.random() < 0.5, side = right ? 1 : -1;
+    const pos = placeOn(st, C, rint(3, 5)), h1 = norm(C + side * 45), h2 = recip(h1), inbC = recip(C);
+    return {
+      type: 'rev', title: 'Viraje reglamentario', nav: { kind: 'vor', st }, ac: { x: pos.x, y: pos.y, hdg: C, alt: 4000 }, altAssigned: 4000, obs: C,
+      brief: `Establecido alejándose por el radial ${H(C)} de ${st.id}. Invierta el curso con un viraje reglamentario 45°/180° por la ${right ? 'derecha' : 'izquierda'} y vuelva a ${st.id} por el curso ${H(inbC)}. Mantenga 4 000 ft.`,
+      hint: `Vira por la ${right ? 'derecha' : 'izquierda'} a ${H(h1)}; con alas niveladas, 1 minuto. A los 45 s, selector de rumbo a ${H(h2)} y OBS en ${H(inbC)}. Al minuto, viraje por la ${right ? 'izquierda' : 'derecha'} a ${H(h2)} e intercepta con 45°.`,
+      draw: { course: { P: st, crs: inbC, inbound: true } },
+      ev: evRev({ st, C, side, h1, h2, inbC })
+    };
+  }
+  function evRev(o) {
+    let phase = 'first', turned = 0, prevH = null, stable = 0, tLeg = 0, hLeg = 0, ok = 0, obsWarned = false;
+    const lado = k => k > 0 ? 'derecha' : 'izquierda';
+    return (s, n, dt, say) => {
+      if (prevH != null) turned += n180(s.ac.hdg - prevH); prevH = s.ac.hdg;
+      stable = Math.abs(s.turn) < 0.5 ? stable + dt : 0;
+      if (phase === 'first') {
+        if (Math.abs(turned) > 20 && stable > 2) {
+          if (Math.sign(turned) !== o.side) { s.penal += 20; say('bad', `El viraje inicial era por la ${lado(o.side)}; has virado por la ${lado(-o.side)}.`); }
+          else if (diff(s.ac.hdg, o.h1) > 8) { s.penal += 10; say('warn', `Rumbo ${H(s.ac.hdg)}: el tramo del viraje reglamentario va a 45° del curso, ${H(o.h1)}.`); }
+          else say('ok', `Rumbo ${H(o.h1)}, a 45° del curso. Toma tiempo: 1 minuto.`);
+          phase = 'leg'; tLeg = s.t - stable; hLeg = s.ac.hdg; turned = 0;
+        }
+        if (s.t > 60 && phase === 'first') return { done: true, ok: false, msg: 'No has iniciado la inversión de curso.' };
+        return null;
+      }
+      if (phase === 'leg') {
+        if (Math.abs(s.turn) > 20 || diff(s.ac.hdg, hLeg) > 20) {
+          const lt = s.t - tLeg;
+          if (Math.abs(lt - 60) <= 12) say('ok', `Tramo de ${mmss(lt)}: bien cronometrado.`); else { s.penal += 10; say('warn', `Tramo de ${mmss(lt)}: debía ser de 1 minuto desde alas niveladas.`); }
+          if (diff(s.obs, o.inbC) > 2 && !obsWarned) { obsWarned = true; say('tip', `Pon el OBS en ${H(o.inbC)} para el acercamiento.`); }
+          phase = 'second'; turned = 0;
+        }
+        if (s.t - tLeg > 150) return { done: true, ok: false, msg: 'Demasiado tiempo en el tramo de 45°: te has alejado.' };
+        return null;
+      }
+      if (phase === 'second') {
+        if (Math.abs(turned) > 90 && stable > 2) {
+          if (Math.sign(turned) !== -o.side) { s.penal += 20; say('bad', `El segundo viraje va por el lado contrario al primero: por la ${lado(-o.side)}.`); }
+          else if (diff(s.ac.hdg, o.h2) > 12) { s.penal += 5; say('warn', `Rumbo ${H(s.ac.hdg)}; el recíproco del tramo era ${H(o.h2)} (45° de corte con el curso).`); }
+          else say('ok', `Rumbo ${H(o.h2)}: interceptando el curso ${H(o.inbC)} con 45°.`);
+          phase = 'intc';
+        }
+        return null;
+      }
+      const dv = lineDev(s.ac, o.st, o.inbC);
+      if (!dv.from && Math.abs(dv.ang) <= 3 && diff(s.track, o.inbC) <= 10) ok += dt; else ok = 0;
+      if (ok > 10) return { done: true, ok: true, msg: `Curso invertido: establecido en ${H(o.inbC)} hacia ${o.st.id}.` };
+      if (n.dme > 12 || s.t > 600) return { done: true, ok: false, msg: 'No has interceptado el curso de vuelta.' };
+      return null;
+    };
+  }
+
+  // Aproximación VOR/DME (no precisión): VOR en el aeródromo, FAF D6, MDA y MAPt sobre el VOR
+  function caseVORApp() {
+    const st = { x: 0, y: 0, id: pick(VORS) }, F = rint(0, 35) * 10, rwy = String(Math.round(F / 10) || 36).padStart(2, '0');
+    const thr = placeOn(st, F, 0.6), FAF = 6, FAFALT = 2100, MDA = pick([500, 600, 700]);
+    const cut = 30, offA = pick([1.5, 2, 2.5]), off = offA * (Math.random() < 0.5 ? 1 : -1), along = 13 + offA / Math.tan(rad(cut));
+    const p0 = placeOn(st, recip(F), along), pos = { x: p0.x + off * Math.cos(rad(F)), y: p0.y - off * Math.sin(rad(F)) }, hdg = norm(F - Math.sign(off) * cut);
+    return {
+      type: 'vor', title: `VOR/DME pista ${rwy}`, nav: { kind: 'vor', st }, ac: { x: pos.x, y: pos.y, hdg, alt: 3000 }, altAssigned: 3000, obs: 360, speed: 'app',
+      brief: `Rumbo ${H(hdg)}, intercepte el curso ${H(F)} hacia ${st.id}, autorizado aproximación VOR/DME pista ${rwy}. Mantenga 3 000 ft hasta establecido; después descienda a ${FAFALT.toLocaleString('es-ES')} ft. FAF D${FAF},0; MDA ${MDA} ft; MAPt sobre el VOR.`,
+      hint: `Pon ${H(F)} en el OBS. Establecido, baja a ${FAFALT.toLocaleString('es-ES')} ft y no más hasta el FAF (D${FAF}). Desde el FAF, descenso continuo ≈ GS × 5,3 ft/min hasta la MDA; en el MAPt, sin pista a la vista, frustrada.`,
+      draw: { course: { P: st, crs: F, inbound: true }, rwy: { thr, crs: F }, fixes: [{ p: placeOn(st, recip(F), FAF), id: `D${FAF}` }] },
+      ev: evVORApp({ st, F, FAF, FAFALT, MDA })
+    };
+  }
+  function evVORApp(o) {
+    let est = false, early = false, step = false, faf = false, obsWarned = false;
+    return (s, n, dt, say) => {
+      const dv = lineDev(s.ac, o.st, o.F), alt = s.ac.alt, dme = dist(s.ac, o.st);
+      if (!obsWarned && s.t > 20 && diff(s.obs, o.F) > 2) { obsWarned = true; say('tip', `Selecciona ${H(o.F)} en el OBS.`); }
+      if (!est && !dv.from && Math.abs(dv.ang) <= 5 && diff(s.track, o.F) <= 15) { est = true; say('ok', `Establecido en el curso ${H(o.F)}: ya puedes bajar a ${o.FAFALT.toLocaleString('es-ES')} ft.`); }
+      if (!est && !early && alt < 2800) { early = true; s.penal += 15; say('bad', 'Estás descendiendo antes de estar establecido en el curso de aproximación.'); }
+      if (!faf && dme > o.FAF && !step && alt < o.FAFALT - 100) { step = true; s.penal += 20; say('bad', `Por debajo de ${o.FAFALT.toLocaleString('es-ES')} ft antes del FAF: no se baja de la altitud del tramo hasta cruzarlo.`); }
+      if (!faf && dme <= o.FAF && !dv.from) {
+        faf = true;
+        if (!est) { s.penal += 10; say('warn', 'Cruzas el FAF sin estar establecido en el curso.'); }
+        if (alt > o.FAFALT + 300) { s.penal += 5; say('warn', `Cruzas el FAF a ${Math.round(alt)} ft: alto para empezar el descenso final.`); }
+        say('info', `FAF: inicia el descenso a la MDA (${o.MDA} ft), ≈ ${Math.round(s.gs * 5.31 / 10) * 10} ft/min a ${Math.round(s.gs)} kt.`);
+      }
+      if (faf && alt < o.MDA - 50) return { done: true, ok: false, msg: `Has bajado de la MDA (${o.MDA} ft).` };
+      if (faf && alt < 1000 && Math.abs(dv.ang) > 10 && dme > 1) return { done: true, ok: false, msg: 'Desviación completa en final: aproximación frustrada.' };
+      if (faf && (dme <= 0.4 || dv.from)) {
+        if (alt > o.MDA + 250) return { done: true, ok: false, msg: `Llegas al MAPt a ${Math.round(alt)} ft, muy por encima de la MDA: planifica el descenso desde el FAF (≈ GS × 5,3 ft/min).` };
+        return { done: true, ok: true, msg: `En el MAPt a ${Math.round(alt)} ft (MDA ${o.MDA}) y en el curso: con la pista a la vista, aterrizas; si no, frustrada.` };
+      }
+      if (dme > 25 || s.t > 900) return { done: true, ok: false, msg: 'Aproximación no completada.' };
+      return null;
+    };
+  }
+
+  // Aproximación RNAV (GNSS) en T: IAF lateral → IF → FAF → umbral
+  function caseRNAV() {
+    const F = rint(0, 35) * 10, rwy = String(Math.round(F / 10) || 36).padStart(2, '0'), thr = { x: 0, y: 0 };
+    const names = R.FIXES.slice().sort(() => Math.random() - 0.5);
+    const FAFp = placeOn(thr, recip(F), 5), IFp = placeOn(thr, recip(F), 10), rightIAF = Math.random() < 0.5;
+    const IAFp = placeOn(IFp, F + (rightIAF ? 90 : -90), 5);
+    const start = placeOn(IAFp, F + (rightIAF ? 90 : -90) + rint(-30, 30), rint(6, 9));
+    const lpv = Math.random() < 0.5, MIN = lpv ? 250 : 450;
+    const wps = [{ x: start.x, y: start.y, id: 'PPOS' }, Object.assign({ id: names[0] }, IAFp), Object.assign({ id: names[1] }, IFp), Object.assign({ id: names[2] }, FAFp), { x: 0, y: 0, id: 'RW' + rwy }];
+    return {
+      type: 'rnav', title: `RNAV (GNSS) pista ${rwy}`, nav: { kind: 'gps', wps, faf: 3, thr, crs: F, lpv, gsRef: placeOn(thr, F, 0.16) },
+      ac: { x: start.x, y: start.y, hdg: bearing(start, IAFp), alt: 3000 }, altAssigned: 3000, obs: 360, speed: 'app',
+      brief: `Directo a ${names[0]}, autorizado aproximación RNAV (GNSS) pista ${rwy} vía ${names[0]}, mínimos ${lpv ? 'LPV' : 'LNAV'}. Cruce ${names[0]} y ${names[1]} a 3 000 ft y ${names[2]} (FAF) a 1 600 ft. ${lpv ? 'DA 250 ft' : 'MDA 450 ft'}.`,
+      hint: `El GPS secuencia solo: vira al nuevo tramo al pasar cada punto (90° en ${names[1]}). Tras ${names[1]} puedes bajar a 1 600 ft. La escala pasa a ± 0,3 NM 2 NM antes del FAF. ${lpv ? 'LPV: sigue la senda como en un ILS hasta la DA.' : 'LNAV: desde el FAF, descenso continuo ≈ GS × 5,3 ft/min hasta la MDA y nivelado hasta el MAPt.'}`,
+      draw: { wps, rwy: { thr, crs: F } },
+      ev: evRNAV({ names, lpv, MIN, F, thr })
+    };
+  }
+  function evRNAV(o) {
+    let lastLeg = 1, legT = 0, mode = null;
+    const xWarn = {}, altWarn = {};
+    const minAlt = leg => leg <= 2 ? 3000 : leg === 3 ? 1600 : o.MIN;
+    return (s, n, dt, say) => {
+      if (s.leg !== lastLeg) {
+        lastLeg = s.leg; legT = s.t;
+        if (s.leg === 3) say('info', 'Tramo intermedio: puedes descender a 1 600 ft.');
+        if (s.leg === 4) say('info', o.lpv ? 'FAF: sigue la senda LPV hasta la DA (250 ft).' : `FAF: descenso a la MDA (450 ft), ≈ ${Math.round(s.gs * 5.31 / 10) * 10} ft/min.`);
+      }
+      if (mode !== n.mode) { if (mode) say('info', n.mode === 'APP' ? 'GPS en modo APPROACH: escala del CDI ± 0,3 NM.' : n.mode === 'TERM' ? 'GPS en modo TERMINAL: escala ± 1 NM.' : 'GPS en modo RUTA: escala ± 5 NM.'); mode = n.mode; }
+      const alt = s.ac.alt, mn = minAlt(s.leg);
+      if (alt < mn - 100 && !altWarn[s.leg] && s.leg < 4) { altWarn[s.leg] = 1; s.penal += 20; say('bad', `Por debajo de la altitud mínima del tramo (${mn.toLocaleString('es-ES')} ft).`); }
+      if (s.leg >= 2 && s.t - legT > 40 && Math.abs(n.xtk) > n.fs && !xWarn[s.leg]) { xWarn[s.leg] = 1; s.penal += 10; say('warn', `Fuera de escala: estás a ${fmt1(Math.abs(n.xtk))} NM del tramo (± ${String(n.fs).replace('.', ',')} NM).`); }
+      if (s.leg === 4) {
+        if (alt < 1000 && Math.abs(n.dots) >= 2.4) return { done: true, ok: false, msg: 'Deflexión completa en final: aproximación frustrada.' };
+        if (o.lpv) {
+          if (alt <= o.MIN) { const okL = Math.abs(n.dots) <= 1, okG = n.gs != null && Math.abs(n.gs) <= 1; return okL && okG ? { done: true, ok: true, msg: 'En la DA de la LPV dentro de tolerancias: luces a la vista (simulado).' } : { done: true, ok: false, msg: 'En la DA fuera de tolerancias: frustrada.' }; }
+        } else {
+          if (alt < o.MIN - 50) return { done: true, ok: false, msg: 'Has bajado de la MDA de la LNAV.' };
+          if (n.dme <= 0.5) return alt <= o.MIN + 200 && Math.abs(n.xtk) <= 0.3 ? { done: true, ok: true, msg: `En el MAPt a ${Math.round(alt)} ft, en el eje: con la pista a la vista, aterrizas.` } : { done: true, ok: false, msg: alt > o.MIN + 200 ? 'Llegas al MAPt muy alto: el descenso tenía que empezar en el FAF.' : 'En el MAPt fuera del eje: frustrada.' };
+        }
+        if (lineDev(s.ac, o.thr, o.F).from) return { done: true, ok: false, msg: 'Has pasado el umbral sin completar la aproximación.' };
+      }
+      if (s.t > 1100) return { done: true, ok: false, msg: 'Aproximación no completada.' };
+      return null;
+    };
+  }
+
+  // Salida instrumental con gradiente mínimo
+  function caseSID() {
+    const Rw = rint(0, 35) * 10, rwy = String(Math.round(Rw / 10) || 36).padStart(2, '0'), thr = { x: 0, y: 0 }, DER = placeOn(thr, Rw, 1.5);
+    const st = Object.assign({ id: pick(VORS) }, placeOn(DER, Rw + (Math.random() < 0.5 ? 90 : -90), 0.4));
+    const side = Math.random() < 0.5 ? 1 : -1, Q = norm(Rw + side * rint(3, 6) * 10), grad = pick([4, 5, 6]), turnAlt = pick([600, 800, 1000]);
+    const sidName = st.id + rint(1, 4) + 'A';
+    return {
+      type: 'sid', title: `SID ${sidName}`, nav: { kind: 'vor', st }, ac: { x: DER.x, y: DER.y, hdg: Rw, alt: 50 }, altAssigned: 5000, obs: Rw, speed: 'climb', vsSel: 500,
+      brief: `Pista ${rwy}, salida ${sidName}: rumbo de pista hasta ${turnAlt} ft, viraje por la ${side > 0 ? 'derecha' : 'izquierda'} para interceptar y seguir el radial ${H(Q)} de ${st.id}, ascienda a 5 000 ft. Gradiente mínimo ${grad} % hasta 3 000 ft.`,
+      hint: `Razón mínima = GS × ${grad} × 1,013 (a 100 kt, ${R.climbRate(100, grad)} ft/min). Nada de virajes antes de ${turnAlt} ft (y nunca por debajo de 400 ft AGL). Luego, alejamiento: «Radial deseado – 45°».`,
+      draw: { course: { P: st, crs: Q, inbound: false }, rwy: { thr, crs: Rw } },
+      ev: evSID({ st, Rw, Q, grad, turnAlt, DER })
+    };
+  }
+  function evSID(o) {
+    let gradWarn = false, turnWarn = false, ok = 0, obsWarned = false;
+    return (s, n, dt, say) => {
+      const alt = s.ac.alt, d = lineDev(s.ac, o.DER, o.Rw).from ? dist(s.ac, o.DER) : 0;
+      if (!obsWarned && s.t > 15 && diff(s.obs, o.Q) > 2) { obsWarned = true; say('tip', `Selecciona el radial ${H(o.Q)} en el OBS (alejándote, curso = radial).`); }
+      // gradiente: altura sobre el final de pista ≥ 35 ft + distancia · 6 076 ft · gradiente
+      const req = 35 + d * FT_NM * o.grad / 100;
+      if (alt < 3000 && req < 3100 && req - alt > 60 && !gradWarn) { gradWarn = true; s.penal += 15; say('bad', `No cumples el ${o.grad} %: a ${fmt1(d)} NM deberías ir por ${Math.round(req)} ft. Necesitas al menos ${R.climbRate(s.gs, o.grad)} ft/min a ${Math.round(s.gs)} kt de GS.`); }
+      if (!turnWarn && diff(s.ac.hdg, o.Rw) > 10 && alt < o.turnAlt - 50) { turnWarn = true; s.penal += alt < 400 ? 25 : 10; say('bad', alt < 400 ? `Viraje a ${Math.round(alt)} ft: nunca por debajo de 400 ft AGL.` : `Viraje a ${Math.round(alt)} ft: la SID pide rumbo de pista hasta ${o.turnAlt} ft.`); }
+      const dv = lineDev(s.ac, o.st, o.Q);
+      if (dv.from && Math.abs(dv.ang) <= 3 && diff(s.track, o.Q) <= 10) ok += dt; else ok = 0;
+      if (ok > 10 && alt >= 3000) return { done: true, ok: true, msg: `Establecido en el radial ${H(o.Q)} por encima de 3 000 ft.${gradWarn ? '' : ` Gradiente del ${o.grad} % cumplido.`}` };
+      if (n.dme > 25 || s.t > 900) return { done: true, ok: false, msg: 'No has interceptado el radial de la SID.' };
+      return null;
+    };
+  }
+  const MAKERS = { sid: caseSID, inb: () => caseRadial(true), outb: () => caseRadial(false), rev: caseRev, hold: caseHold, arc: caseArc, ils: caseILS, vor: caseVORApp, rnav: caseRNAV };
 
   // ---------- estado y física ----------
   function makeState(c, opt) {
-    const s = { c, t: 0, ac: Object.assign({ tas: opt.tas || 120 }, c.ac), turn: 0, vs: 0, vsSel: 600, altTarget: c.altAssigned, altAssigned: c.altAssigned,
-      obs: c.obs, nav: c.nav, gsFail: false, penal: 0, hint: false, trail: [], trailT: 0, wind: { dir: opt.windDir || 0, spd: opt.wind || 0 },
-      chrono: { st: 'off', t0: 0, acc: 0 }, track: c.ac.hdg, gs: opt.tas || 120 };
-    s.hdgStart = s.ac.hdg; s.ev = c.ev; return s;
+    const at = SIM_AC[opt.ac] || SIM_AC.c172, ias = opt.ias || at[c.speed || 'cruise'];
+    const s = { c, t: 0, ac: Object.assign({ ias, tas: tasOf(ias, c.ac.alt) }, c.ac), acType: at, iasSel: ias, turn: 0, vs: 0, vsSel: c.vsSel || 600,
+      altTarget: c.altAssigned, altAssigned: c.altAssigned, obs: c.obs, nav: c.nav, leg: c.nav.kind === 'gps' ? 1 : 0, sq: sqRandom(),
+      gsFail: false, penal: 0, hint: false, trail: [], trailT: 0, wind: { dir: opt.windDir || 0, spd: opt.wind || 0 },
+      chrono: { st: 'off', t0: 0, acc: 0 }, track: c.ac.hdg, gs: tasOf(ias, c.ac.alt) };
+    s.hdgStart = s.ac.hdg;
+    const can = ['inb', 'outb', 'rev', 'hold', 'arc', 'vor'].includes(c.type);
+    const evt = opt.events && can && Math.random() < (opt.eventRate == null ? 0.6 : opt.eventRate)
+      ? { t: rint(20, 60), kind: opt.eventKind || pick(c.type === 'vor' ? ['com'] : ['com', 'alt', 'spd']) } : null;
+    s.evt = evt; s.ev = withEvents(c.ev, evt); return s;
+  }
+  // eventos y transpondedor: fallo de comunicaciones (7600), instrucciones del ATC y códigos que no proceden
+  function withEvents(base, evt) {
+    let sqBad = false, sq77 = false, held = null;
+    return (s, n, dt, say) => {
+      if (s.sq === '7500' && !sqBad) { sqBad = true; s.penal += 30; say('bad', 'El 7500 (interferencia ilícita) está prohibido en VATSIM: no se simulan secuestros.'); }
+      if (s.sq === '7700' && !sq77) { sq77 = true; s.penal += 10; say('warn', 'El 7700 es para emergencias (y bajo control radar se mantiene el código asignado salvo que el ATC pida cambiarlo). Para fallo de comunicaciones, 7600.'); }
+      if (evt && !evt.done) {
+        if (!evt.fired && s.t >= evt.t) {
+          evt.fired = s.t;
+          if (evt.kind === 'com') say('bad', 'Fallo de comunicaciones: ya no recibes al ATC. Continúa según la última autorización.');
+          if (evt.kind === 'alt') { const up = s.altAssigned <= 4000 ? true : s.altAssigned >= 7000 ? false : Math.random() < 0.5; evt.val = s.altAssigned + (up ? 1000 : -1000); s.altAssigned = evt.val; say('info', `ATC: «${up ? 'Ascienda' : 'Descienda'} y mantenga ${evt.val.toLocaleString('es-ES')} ft».`); }
+          if (evt.kind === 'spd') { evt.val = Math.max(s.acType.min + 10, Math.round((s.ac.ias - 20) / 10) * 10); say('info', `ATC: «Reduzca a ${evt.val} kt».`); }
+        } else if (evt.fired) {
+          const el = s.t - evt.fired;
+          if (evt.kind === 'com' && s.sq === '7600') { evt.done = true; say('ok', 'Transpondedor 7600: correcto. En VATSIM, además, puedes avisar por texto.'); }
+          else if (evt.kind === 'alt' && s.altTarget === evt.val) { evt.done = true; say('ok', `${evt.val.toLocaleString('es-ES')} ft seleccionados.`); }
+          else if (evt.kind === 'spd' && Math.abs(s.iasSel - evt.val) <= 5) { evt.done = true; say('ok', `${evt.val} kt seleccionados.`); }
+          else if (el > (evt.kind === 'com' ? 60 : 30)) {
+            evt.done = true; s.penal += 15;
+            say('warn', evt.kind === 'com' ? 'Con fallo de comunicaciones debías poner 7600 en el transpondedor.' : evt.kind === 'alt' ? `No has seleccionado los ${evt.val.toLocaleString('es-ES')} ft que pidió el ATC.` : `No has reducido a ${evt.val} kt como pidió el ATC.`);
+          }
+        }
+      }
+      if (held) return evt.done ? held : null; // el caso termina cuando el evento se ha atendido (o ha vencido)
+      const r = base(s, n, dt, say);
+      if (r && r.ok && evt && evt.fired && !evt.done) { held = r; return null; }
+      return r;
+    };
   }
   function physStep(s, dt) {
     const ac = s.ac;
+    // velocidad indicada hacia la seleccionada (≈ 1,5 kt/s) y TAS por la regla del 2 % por 1 000 ft
+    const dI = s.iasSel - ac.ias; if (Math.abs(dI) > 0.05) ac.ias += clamp(dI, -1.5 * dt, 1.5 * dt);
+    ac.tas = tasOf(ac.ias, ac.alt);
     // viraje a razón estándar (3°/s) hacia el lado al que se movió el selector; el rumbo lleva decimales
     if (Math.abs(s.turn) > 0.01) { const d = clamp(s.turn, -3 * dt, 3 * dt); ac.hdg = ((ac.hdg + d) % 360 + 360) % 360; s.turn -= d; } else s.turn = 0;
     const dAlt = s.altTarget - ac.alt;
@@ -318,27 +559,29 @@
   }
   // avanza dt segundos en pasos de 0,25 s; devuelve el resultado del evaluador si el caso termina
   function advance(s, dt, say) {
-    while (dt > 1e-6) { const h = Math.min(0.25, dt); dt -= h; physStep(s, h); const r = s.ev(s, readNav(s), h, say); if (r) return r; }
+    while (dt > 1e-6) { const h = Math.min(0.25, dt); dt -= h; physStep(s, h); gpsSequence(s, say); const r = s.ev(s, readNav(s), h, say); if (r) return r; }
     return null;
   }
 
   // ---------- montaje ----------
   function mount(VIEW, deps) {
     const store = deps.store;
-    const cfg = Object.assign({ mode: 'inb', inst: 'hsi', wind: 0, speed: 120, help: true, imc: false, tscale: 2 }, store.get('sim', {}));
+    const cfg = Object.assign({ mode: 'inb', inst: 'hsi', wind: 0, ac: 'c172', events: true, help: true, imc: false, tscale: 2 }, store.get('sim', {}));
+    if (!SIM_AC[cfg.ac]) cfg.ac = 'c172';
     const saveCfg = () => store.set('sim', cfg);
     const best = store.get('simBest', {});
     let s = null, raf = 0, last = 0, running = false, ended = false, logN = 0, nextTimer = 0;
     const cont = { solved: 0, failed: 0, pts: 0 };
 
     VIEW.innerHTML = `<div class="view-head"><div><div class="eyebrow">Simulador IFR · ${Object.keys(TYPES).length} tipos de caso</div><h1>Simulador</h1>
-        <p>Tu avión visto desde arriba con los instrumentos básicos. Sigue la instrucción, vuela con el rumbo seleccionado, el OBS y la altitud, y atiende al instructor.</p></div></div>
+        <p>Tu avión visto desde arriba con los instrumentos básicos. Se vuela como con el piloto automático: rumbo, altitud, velocidad vertical y velocidad seleccionados, más el OBS. Sigue la instrucción y atiende al instructor.</p></div></div>
       <div class="sim-top">
-        <div class="seg" id="smode">${Object.entries(TYPES).map(([k, l]) => `<button data-k="${k}" aria-pressed="${cfg.mode === k}">${l.replace('Radial en ', 'Radial · ').replace('Aproximación ', '')}</button>`).join('')}<button data-k="cont" aria-pressed="${cfg.mode === 'cont'}">Continuo</button></div>
+        <div class="seg" id="smode">${Object.entries(TYPES).map(([k, l]) => `<button data-k="${k}" aria-pressed="${cfg.mode === k}">${l.replace('Radial en ', 'Radial · ').replace('Aproximación ', '').replace('Viraje reglamentario', 'Inversión')}</button>`).join('')}<button data-k="cont" aria-pressed="${cfg.mode === 'cont'}">Continuo</button></div>
         <div class="row small">
           <div class="seg" id="sinst"><button data-k="hsi" aria-pressed="${cfg.inst === 'hsi'}">HSI</button><button data-k="cdi" aria-pressed="${cfg.inst === 'cdi'}">DG + CDI</button></div>
           <label class="chip">Viento <select id="swind">${[[0, 'sin'], [10, 'suave'], [20, 'moderado']].map(([v, l]) => `<option value="${v}" ${cfg.wind == v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-          <label class="chip">TAS <select id="sspd">${[90, 120, 150].map(v => `<option ${cfg.speed == v ? 'selected' : ''}>${v}</option>`).join('')}</select> kt</label>
+          <label class="chip">Avión <select id="sac">${Object.entries(SIM_AC).map(([k, a]) => `<option value="${k}" ${cfg.ac === k ? 'selected' : ''}>${a.name} (${a.kind})</option>`).join('')}</select></label>
+          <label class="chip" title="Fallo de comunicaciones e instrucciones del ATC durante el caso"><input type="checkbox" id="sevt" ${cfg.events ? 'checked' : ''}> Eventos</label>
           <label class="chip"><input type="checkbox" id="shelp" ${cfg.help ? 'checked' : ''}> Ayudas en el mapa</label>
           <label class="chip"><input type="checkbox" id="simc" ${cfg.imc ? 'checked' : ''}> Ocultar mapa (IMC)</label>
         </div>
@@ -352,7 +595,7 @@
               <div class="seg" id="sts">${[1, 2, 4, 8].map(v => `<button data-k="${v}" aria-pressed="${cfg.tscale === v}">${v}×</button>`).join('')}</div>
               <button class="btn" id="snew">Nuevo caso</button><button class="btn ghost" id="shint">Pista (−10)</button>
               <button class="btn sim-chrono" id="schrono" title="Cronómetro (T): inicia, para y pone a cero">⏱ 0:00</button></div>
-            <details class="help small"><summary>Teclado</summary><p class="muted" style="margin:6px 0 0">← → rumbo seleccionado ±5° (Mayús ±1°; el avión vira hacia el lado al que mueves el selector) · Z / X OBS ∓1° (Mayús ±10°) · ↑ ↓ altitud ±100 ft · Mayús ↑ ↓ régimen ±100 ft/min · T cronómetro · Espacio pausa · 1–4 velocidad · N nuevo caso</p></details>
+            <details class="help small"><summary>Teclado</summary><p class="muted" style="margin:6px 0 0">← → rumbo seleccionado ±5° (Mayús ±1°; el avión vira hacia el lado al que mueves el selector) · Z / X OBS ∓1° (Mayús ±10°) · ↑ ↓ altitud ±100 ft · Mayús ↑ ↓ régimen ±100 ft/min · Q / W velocidad ∓5 kt (Mayús ±10) · T cronómetro · Espacio pausa · 1–4 velocidad · N nuevo caso</p></details>
           </div>
           <div class="simlog" id="slog" aria-live="polite"></div>
           <div class="small muted" id="sscore"></div>
@@ -364,7 +607,10 @@
             <div><span class="eyebrow">Rumbo</span><div class="row"><button class="btn" data-h="-10">−10</button><button class="btn" data-h="-1">−1</button><input class="num" id="hin" inputmode="numeric" placeholder="000"><button class="btn" data-h="1">+1</button><button class="btn" data-h="10">+10</button></div>
               <div class="row" style="margin-top:4px"><button class="btn" data-dir="L">◀ por la izquierda</button><button class="btn" data-dir="S">el más corto</button><button class="btn" data-dir="R">por la derecha ▶</button></div></div>
             <div><span class="eyebrow">OBS / curso</span><div class="row"><button class="btn" data-o="-10">−10</button><button class="btn" data-o="-1">−1</button><input class="num" id="oin" inputmode="numeric" placeholder="000"><button class="btn" data-o="1">+1</button><button class="btn" data-o="10">+10</button></div></div>
-            <div><span class="eyebrow">Altitud · régimen</span><div class="row"><button class="btn" data-a="-100">−100 ft</button><button class="btn" data-a="100">+100 ft</button><button class="btn" data-v="-100">−100 fpm</button><button class="btn" data-v="100">+100 fpm</button></div></div>
+            <div><span class="eyebrow">Altitud · régimen</span><div class="row"><button class="btn" data-a="-1000">−1000</button><button class="btn" data-a="-100">−100 ft</button><button class="btn" data-a="100">+100 ft</button><button class="btn" data-a="1000">+1000</button></div>
+              <div class="row" style="margin-top:4px"><button class="btn" data-v="-100">−100 fpm</button><button class="btn" data-v="100">+100 fpm</button></div></div>
+            <div><span class="eyebrow">Velocidad (IAS)</span><div class="row"><button class="btn" data-s="-10">−10 kt</button><button class="btn" data-s="-5">−5</button><button class="btn" data-s="5">+5</button><button class="btn" data-s="10">+10 kt</button></div></div>
+            <div><span class="eyebrow">Transpondedor</span><div class="row"><input class="num" id="sqin" inputmode="numeric" maxlength="4" placeholder="7000"><button class="btn" id="sqset">Squawk</button><span class="mono small" id="sqcur"></span></div></div>
           </div>
         </div>
       </div>`;
@@ -388,10 +634,10 @@
       clearTimeout(nextTimer);
       const type = kind || (cfg.mode === 'cont' ? pick(Object.keys(TYPES)) : cfg.mode);
       const c = MAKERS[type]();
-      s = makeState(c, { tas: cfg.speed, wind: +cfg.wind, windDir: rint(0, 35) * 10 });
+      s = makeState(c, { ac: cfg.ac, wind: +cfg.wind, windDir: rint(0, 35) * 10, events: cfg.events });
       ended = false; running = false; view = null;
       $('#slog').innerHTML = '';
-      say('info', `${TYPES[type]}: ${c.brief}${s.wind.spd ? ` Viento ${H(s.wind.dir)}/${s.wind.spd} kt.` : ''}`);
+      say('info', `${TYPES[type]} · ${s.acType.name}: ${c.brief} Transpondedor ${s.sq}.${s.wind.spd ? ` Viento ${H(s.wind.dir)}/${s.wind.spd} kt.` : ''}`);
       renderInstr(); setPause(false);
     }
     function renderInstr() {
@@ -441,8 +687,8 @@
       g.fillStyle = colors['radar-bg']; g.fillRect(0, 0, W, Hh);
       if (!s) return;
       if (cfg.imc && !ended) { g.fillStyle = colors['radar-fg']; g.font = '600 15px ' + getComputedStyle(document.body).fontFamily; g.textAlign = 'center'; g.fillText('IMC · vuela solo con los instrumentos', W / 2, Hh / 2); g.font = '12px sans-serif'; g.fillText('El mapa se mostrará al terminar el caso', W / 2, Hh / 2 + 22); return; }
-      const ac = s.ac, nav = s.nav, ref = nav.kind === 'ils' ? nav.thr : nav.st;
-      const pts = [ac, ref]; if (s.c.draw.arc) { const a = s.c.draw.arc; pts.push(placeOn(a.st, a.target, a.A + 2), placeOn(a.st, a.r0, a.A + 2)); }
+      const ac = s.ac, nav = s.nav, ref = nav.kind === 'vor' ? nav.st : nav.thr;
+      const pts = [ac, ref]; if (s.c.draw.wps) pts.push(...s.c.draw.wps); if (s.c.draw.rwy) pts.push(placeOn(s.c.draw.rwy.thr, recip(s.c.draw.rwy.crs), 2)); if (s.c.draw.arc) { const a = s.c.draw.arc; pts.push(placeOn(a.st, a.target, a.A + 2), placeOn(a.st, a.r0, a.A + 2)); }
       if (s.c.draw.hold) { const hh = s.c.draw.hold; pts.push(placeOn(hh.st, recip(hh.inb), 4), placeOn(hh.st, hh.inb + (hh.right ? 90 : -90), 3), placeOn(hh.st, hh.inb - (hh.right ? 90 : -90), 2.5)); }
       let x0 = Math.min(...pts.map(p => p.x)), x1 = Math.max(...pts.map(p => p.x)), y0 = Math.min(...pts.map(p => p.y)), y1 = Math.max(...pts.map(p => p.y));
       const span = Math.max(6, (x1 - x0) * 1.25, (y1 - y0) * 1.25 * W / Hh);
@@ -473,8 +719,15 @@
         }
         if (d.ils) { const i = d.ils; const far = placeOn(i.thr, recip(i.crs), 18); line(i.thr, far, acc, 2, [8, 6]); const f1p = placeOn(i.thr, recip(i.crs) + 3, 12), f2p = placeOn(i.thr, recip(i.crs) - 3, 12); line(i.thr, f1p, colors['radar-line'], 1); line(i.thr, f2p, colors['radar-line'], 1); }
       }
-      // pista / estación
-      if (nav.kind === 'ils') { const end = placeOn(nav.thr, nav.crs, 1.7); g.strokeStyle = colors['radar-rwy']; g.lineWidth = Math.max(3, 0.03 * view.sc); g.beginPath(); g.moveTo(X(nav.thr), Y(nav.thr)); g.lineTo(X(end), Y(end)); g.stroke(); g.fillStyle = colors['radar-fg']; g.fillText(nav.id, X(end) + 6, Y(end)); }
+      // pista, puntos del GPS, fijos
+      if (d.rwy) { const r = d.rwy, end = placeOn(r.thr, r.crs, 1.5); g.strokeStyle = colors['radar-rwy']; g.lineWidth = Math.max(3, 0.03 * view.sc); g.beginPath(); g.moveTo(X(r.thr), Y(r.thr)); g.lineTo(X(end), Y(end)); g.stroke(); }
+      if (d.wps) {
+        for (let i = 1; i < d.wps.length; i++) { const a = d.wps[i - 1], b = d.wps[i], act = i === s.leg; if (i > 1 || act) line(a, b, act ? colors['inst-needle'] : (cfg.help ? colors['inst-acc'] : colors['radar-line']), act ? 2.5 : 1.5, i === 1 ? [4, 4] : []); }
+        g.fillStyle = colors['radar-fg']; d.wps.slice(1).forEach(w => { g.save(); g.translate(X(w), Y(w)); g.beginPath(); g.moveTo(0, -6); g.lineTo(5, 3); g.lineTo(-5, 3); g.closePath(); g.stroke(); g.restore(); g.fillText(w.id, X(w) + 8, Y(w) - 6); });
+      }
+      if (d.fixes) d.fixes.forEach(f => { g.fillStyle = colors['radar-fg']; g.fillRect(X(f.p) - 3, Y(f.p) - 3, 6, 6); g.fillText(f.id, X(f.p) + 6, Y(f.p) - 6); });
+      if (nav.kind === 'gps') { /* sin estación */ }
+      else if (nav.kind === 'ils') { const end = placeOn(nav.thr, nav.crs, 1.7); g.strokeStyle = colors['radar-rwy']; g.lineWidth = Math.max(3, 0.03 * view.sc); g.beginPath(); g.moveTo(X(nav.thr), Y(nav.thr)); g.lineTo(X(end), Y(end)); g.stroke(); g.fillStyle = colors['radar-fg']; g.fillText(nav.id, X(end) + 6, Y(end)); }
       else { const p = nav.st; g.strokeStyle = colors['radar-fg']; g.lineWidth = 2; g.beginPath(); for (let k = 0; k < 6; k++) { const a = Math.PI / 3 * k; const xx = X(p) + 7 * Math.cos(a), yy = Y(p) + 7 * Math.sin(a); k ? g.lineTo(xx, yy) : g.moveTo(xx, yy); } g.closePath(); g.stroke(); g.fillStyle = colors['radar-fg']; g.fillText(nav.st.id, X(p) + 10, Y(p) - 8); }
       // estela
       g.fillStyle = colors['radar-fg']; for (const [tx, ty] of s.trail) { g.fillRect(X({ x: tx }) - 1, Y({ y: ty }) - 1, 2, 2); }
@@ -482,6 +735,7 @@
       const ax = X(ac), ay = Y(ac), hr = rad(ac.hdg);
       g.save(); g.translate(ax, ay); g.rotate(hr); g.fillStyle = colors['inst-needle']; g.beginPath(); g.moveTo(0, -11); g.lineTo(7, 8); g.lineTo(0, 4); g.lineTo(-7, 8); g.closePath(); g.fill(); g.restore();
       const vec = placeOn(ac, s.track, s.gs / 60); line(ac, vec, colors['inst-needle'], 1, [3, 3]);
+      g.fillStyle = colors['radar-fg']; const right = ax > W - 120; g.textAlign = right ? 'right' : 'left'; g.fillText(`${Math.round(ac.alt / 100) * 100} ft · ${Math.round(ac.ias)} kt`, ax + (right ? -12 : 12), ay + 14); g.textAlign = 'left';
       // escala y viento
       g.fillStyle = colors['radar-fg']; g.textAlign = 'right'; const nm = view.sc >= 40 ? 1 : 5; g.fillRect(W - 14 - nm * view.sc, Hh - 16, nm * view.sc, 2); g.fillText(nm + ' NM', W - 14, Hh - 22);
       g.textAlign = 'left'; g.fillText('N ↑', 10, 18);
@@ -510,26 +764,31 @@
     function drawHSI(c, n) {
       const [g, W] = fit(c); const cx = W / 2, cy = W / 2, r = W / 2 - 14;
       g.clearRect(0, 0, W, W + 30); card(g, cx, cy, r, s.ac.hdg); bugMark(g, cx, cy, r, s.turn);
-      const crs = n.ils ? s.nav.crs : s.obs, a = crs - s.ac.hdg, sp = r * 0.2;
+      const crs = n.crs, a = crs - s.ac.hdg, sp = r * 0.2;
       g.save(); g.translate(cx, cy); g.rotate(rad(a)); g.strokeStyle = colors['inst-acc']; g.fillStyle = colors['inst-acc']; g.lineWidth = 5;
       g.beginPath(); g.moveTo(0, -r * 0.72); g.lineTo(0, -r * 0.5); g.moveTo(0, r * 0.5); g.lineTo(0, r * 0.78); g.stroke();
       g.beginPath(); g.moveTo(0, -r * 0.86); g.lineTo(-8, -r * 0.7); g.lineTo(8, -r * 0.7); g.closePath(); g.fill();
       g.beginPath(); g.moveTo(n.dots * sp, -r * 0.46); g.lineTo(n.dots * sp, r * 0.46); g.stroke(); g.restore();
       devDots(g, cx, cy, sp, a); if (!n.ils) toFrom(g, cx, cy, a, n.to);
       plane(g, cx, cy);
-      if (n.ils) gsScale(g, cx + r * 0.86, cy, r * 0.16, n.gs, s.gsFail);
-      label(g, cx, W + 18, `HSI · CRS ${H(crs)} · HDG ${H(s.ac.hdg)}`);
+      if (n.vert) gsScale(g, cx + r * 0.86, cy, r * 0.16, n.gs, s.gsFail);
+      if (n.gps) gpsTag(g, 4, 4, n);
+      label(g, cx, W + 18, `HSI · ${n.gps ? 'DTK' : 'CRS'} ${H(crs)} · HDG ${H(s.ac.hdg)}`);
     }
+    // indicador del modo del GPS (RUTA/TERMINAL/APPROACH) y su escala, en la esquina del instrumento
+    function gpsTag(g, x, y, n) { const t = `GPS ${n.mode} ±${String(n.fs).replace('.', ',')}`; g.font = '700 10px IBM Plex Mono, monospace'; const w = g.measureText(t).width + 8; g.fillStyle = '#d946ef'; g.fillRect(x, y, w, 15); g.fillStyle = '#fff'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText(t, x + 4, y + 8); }
     function plane(g, cx, cy) { g.strokeStyle = colors['inst-needle']; g.lineWidth = 3; g.beginPath(); g.moveTo(cx, cy - 10); g.lineTo(cx, cy + 12); g.moveTo(cx - 14, cy); g.lineTo(cx + 14, cy); g.moveTo(cx - 6, cy + 11); g.lineTo(cx + 6, cy + 11); g.stroke(); }
     function drawDG(c) { const [g, W] = fit(c); const cx = W / 2, cy = W / 2, r = W / 2 - 14; g.clearRect(0, 0, W, W + 30); card(g, cx, cy, r, s.ac.hdg); bugMark(g, cx, cy, r, s.turn); plane(g, cx, cy); label(g, cx, W + 18, `DG · HDG ${H(s.ac.hdg)} · bug ${H(s.ac.hdg + s.turn)}`); }
     function drawCDI(c, n) {
       const [g, W] = fit(c); const cx = W / 2, cy = W / 2, r = W / 2 - 14, sp = r * 0.2;
-      g.clearRect(0, 0, W, W + 30); const crs = n.ils ? s.nav.crs : s.obs; card(g, cx, cy, r, s.obs);
+      g.clearRect(0, 0, W, W + 30); const crs = n.crs; card(g, cx, cy, r, n.gps ? n.crs : s.obs); // con GPS la rosa sigue la DTK
       devDots(g, cx, cy, sp, 0);
       g.strokeStyle = colors['inst-acc']; g.lineWidth = 4; g.beginPath(); g.moveTo(cx + n.dots * sp, cy - r * 0.55); g.lineTo(cx + n.dots * sp, cy + r * 0.55); g.stroke();
-      if (n.ils) { g.strokeStyle = s.gsFail ? 'transparent' : colors['inst-acc']; const gy = cy - (n.gs || 0) * sp; if (!s.gsFail && n.gs != null) { g.beginPath(); g.moveTo(cx - r * 0.55, gy); g.lineTo(cx + r * 0.55, gy); g.stroke(); } gsScale(g, cx + r * 0.78, cy, sp, null, s.gsFail); }
+      if (n.vert) { g.strokeStyle = colors['inst-acc']; const gy = cy - (n.gs || 0) * sp; if (!s.gsFail && n.gs != null) { g.beginPath(); g.moveTo(cx - r * 0.55, gy); g.lineTo(cx + r * 0.55, gy); g.stroke(); } gsScale(g, cx + r * 0.78, cy, sp, null, s.gsFail); }
+      if (n.gps) gpsTag(g, 4, 4, n);
+      if (n.ils || n.gps) { /* sin TO/FROM: la aguja no depende del OBS */ }
       else { g.fillStyle = colors['inst-fg']; g.fillRect(cx + 18, n.to ? cy - 34 : cy + 16, 38, 18); g.fillStyle = colors['inst-bg']; g.font = '700 11px IBM Plex Mono, monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(n.to ? 'TO' : 'FROM', cx + 37, n.to ? cy - 25 : cy + 25); }
-      label(g, cx, W + 18, n.ils ? `CDI · LOC ${H(crs)} (OBS ${H(s.obs)})` : `CDI · OBS ${H(s.obs)}`);
+      label(g, cx, W + 18, n.ils ? `CDI · LOC ${H(crs)} (OBS ${H(s.obs)})` : n.gps ? `CDI · GPS DTK ${H(crs)}` : `CDI · OBS ${H(s.obs)}`);
     }
     function drawRMI(c, n) {
       const [g, W] = fit(c); const cx = W / 2, cy = W / 2, r = W / 2 - 14;
@@ -538,7 +797,7 @@
       g.strokeStyle = colors['inst-acc']; g.fillStyle = colors['inst-acc']; g.lineWidth = 4; g.beginPath(); g.moveTo(cx - Math.sin(a) * (r - 30), cy + Math.cos(a) * (r - 30)); g.lineTo(cx + Math.sin(a) * (r - 40), cy - Math.cos(a) * (r - 40)); g.stroke();
       g.save(); g.translate(cx, cy); g.rotate(a); g.beginPath(); g.moveTo(0, -(r - 26)); g.lineTo(-8, -(r - 44)); g.lineTo(8, -(r - 44)); g.closePath(); g.fill(); g.restore();
       g.fillStyle = colors['inst-fg']; g.beginPath(); g.arc(cx, cy, 5, 0, Math.PI * 2); g.fill();
-      label(g, cx, W + 18, `RMI · ${n.ils ? s.nav.id : s.nav.st.id}`);
+      label(g, cx, W + 18, `RMI · ${n.gps ? 'GPS ' + n.wp : n.ils ? s.nav.id : s.nav.st.id}`);
     }
     let dataT = 0;
     const canDraw = !!(cMap.getContext && cMap.getContext('2d')); // sin canvas (p. ej. jsdom) solo se actualizan los datos
@@ -549,9 +808,10 @@
       if (canDraw) { if (cfg.inst === 'hsi') drawHSI($('#ci1'), n); else { drawDG($('#ci0')); drawCDI($('#ci1'), n); } drawRMI($('#ci2'), n); }
       const now = performance.now(); if (now - dataT < 150) return; dataT = now;
       const ch = s.chrono, ct = ch.acc + (ch.st === 'run' ? s.t - ch.t0 : 0);
-      $('#schrono').textContent = '⏱ ' + mmss(ct); $('#schrono').dataset.st = ch.st;
+      $('#schrono').textContent = '⏱ ' + mmss(ct); $('#schrono').dataset.st = ch.st; $('#sqcur').textContent = 'actual ' + s.sq;
       const vsTxt = s.vs ? (s.vs > 0 ? '+' : '') + Math.round(s.vs) : '0';
-      $('#sdata').innerHTML = [['DME', fmt1(n.dme) + ' NM'], ['GS', Math.round(s.gs) + ' kt'], ['TAS', s.ac.tas + ' kt'], ['ALT', Math.round(s.ac.alt).toLocaleString('es-ES') + ' ft'], ['ALT SEL', s.altTarget.toLocaleString('es-ES') + ' ft'], ['V/S', vsTxt + ' · sel ' + s.vsSel], ['HDG', H(s.ac.hdg) + ' → ' + H(s.ac.hdg + s.turn)], ['TRK', H(s.track)], [n.ils ? 'LOC' : 'OBS', H(n.ils ? s.nav.crs : s.obs)], ['Tiempo', mmss(s.t)]]
+      const bank = Math.abs(s.turn) > 0.3 ? R.bankStdTurn(s.ac.tas) : 0;
+      $('#sdata').innerHTML = [[n.gps ? 'GPS ' + n.wp : 'DME', fmt1(n.dme) + ' NM'], ['IAS', Math.round(s.ac.ias) + ' → ' + s.iasSel + ' kt'], ['TAS · GS', Math.round(s.ac.tas) + ' · ' + Math.round(s.gs) + ' kt'], ['ALT', Math.round(s.ac.alt).toLocaleString('es-ES') + ' ft'], ['ALT SEL', s.altTarget.toLocaleString('es-ES') + ' ft'], ['V/S', vsTxt + ' · sel ' + s.vsSel], ['HDG', H(s.ac.hdg) + ' → ' + H(s.ac.hdg + s.turn)], ['TRK', H(s.track)], ['Alabeo', bank ? bank + '°' : '0°'], [n.ils ? 'LOC' : n.gps ? 'DTK' : 'OBS', H(n.crs)], ['SQ', s.sq], ['Tiempo', mmss(s.t)]]
         .map(([k, v]) => `<div><span>${k}</span><b class="mono">${v}</b></div>`).join('');
       cHud.textContent = ended ? '' : (running ? '' : (s.t ? 'PAUSA' : 'Pulsa Empezar (espacio)'));
     }
@@ -562,11 +822,15 @@
     const obsBy = dlt => { if (s) s.obs = norm(s.obs + dlt); };
     const altBy = dlt => { if (s) s.altTarget = clamp(s.altTarget + dlt, 0, 20000); };
     const vsBy = dlt => { if (s) s.vsSel = clamp(s.vsSel + dlt, 100, 2000); };
+    const spdBy = dlt => { if (s) s.iasSel = clamp(s.iasSel + dlt, s.acType.min, s.acType.max); };
+    const squawk = () => { const v = ($('#sqin').value || '').trim(); if (!/^[0-7]{4}$/.test(v)) { say('tip', 'El código del transpondedor son cuatro cifras del 0 al 7.'); return; } if (s) { s.sq = v; say('info', `Transpondedor ${v}.`); } $('#sqin').value = ''; $('#sqin').blur(); };
     function chrono() { if (!s) return; const c = s.chrono; if (c.st === 'off') { c.st = 'run'; c.t0 = s.t; c.acc = 0; } else if (c.st === 'run') { c.acc += s.t - c.t0; c.st = 'stop'; } else { c.st = 'off'; c.acc = 0; } }
     $$('[data-h]').forEach(b => b.onclick = () => turnBy(+b.dataset.h));
     $$('[data-o]').forEach(b => b.onclick = () => obsBy(+b.dataset.o));
     $$('[data-a]').forEach(b => b.onclick = () => altBy(+b.dataset.a));
     $$('[data-v]').forEach(b => b.onclick = () => vsBy(+b.dataset.v));
+    $$('[data-s]').forEach(b => b.onclick = () => spdBy(+b.dataset.s));
+    $('#sqset').onclick = squawk; $('#sqin').onkeydown = e => { if (e.key === 'Enter') squawk(); };
     $$('[data-dir]').forEach(b => b.onclick = () => { const v = parseInt($('#hin').value, 10); if (!isNaN(v)) setHdg(v % 360, b.dataset.dir); });
     $('#hin').onkeydown = e => { if (e.key === 'Enter') { const v = parseInt(e.target.value, 10); if (!isNaN(v)) setHdg(v % 360, 'S'); e.target.blur(); } };
     $('#oin').onkeydown = e => { if (e.key === 'Enter') { const v = parseInt(e.target.value, 10); if (!isNaN(v) && s) s.obs = norm(v); e.target.blur(); } };
@@ -579,7 +843,8 @@
     $$('#sinst button').forEach(b => b.onclick = () => { cfg.inst = b.dataset.k; saveCfg(); $$('#sinst button').forEach(x => x.setAttribute('aria-pressed', x === b)); $('.siminst').innerHTML = (cfg.inst === 'hsi' ? '<canvas id="ci1"></canvas>' : '<canvas id="ci0"></canvas><canvas id="ci1"></canvas>') + '<canvas id="ci2"></canvas>'; });
     $$('#sts button').forEach(b => b.onclick = () => { cfg.tscale = +b.dataset.k; saveCfg(); $$('#sts button').forEach(x => x.setAttribute('aria-pressed', x === b)); });
     $('#swind').onchange = e => { cfg.wind = +e.target.value; saveCfg(); say('info', 'El viento se aplica desde el próximo caso.'); };
-    $('#sspd').onchange = e => { cfg.speed = +e.target.value; saveCfg(); if (s && s.t === 0) s.ac.tas = cfg.speed; else say('info', 'La velocidad se aplica desde el próximo caso.'); };
+    $('#sac').onchange = e => { cfg.ac = e.target.value; saveCfg(); if (s && s.t === 0) newCase(s.c.type); else say('info', 'El avión cambia desde el próximo caso.'); };
+    $('#sevt').onchange = e => { cfg.events = e.target.checked; saveCfg(); say('info', cfg.events ? 'Eventos activados desde el próximo caso: fallos de comunicaciones e instrucciones del ATC.' : 'Eventos desactivados desde el próximo caso.'); };
     $('#shelp').onchange = e => { cfg.help = e.target.checked; saveCfg(); };
     $('#simc').onchange = e => { cfg.imc = e.target.checked; saveCfg(); };
     function onKey(e) {
@@ -587,6 +852,7 @@
       const k = e.key, sh = e.shiftKey; let used = true;
       if (k === 'ArrowLeft') turnBy(sh ? -1 : -5); else if (k === 'ArrowRight') turnBy(sh ? 1 : 5);
       else if (k === 'ArrowUp') sh ? vsBy(100) : altBy(100); else if (k === 'ArrowDown') sh ? vsBy(-100) : altBy(-100);
+      else if (k === 'q' || k === 'Q') spdBy(sh ? -10 : -5); else if (k === 'w' || k === 'W') spdBy(sh ? 10 : 5);
       else if (k === 'z' || k === 'Z') obsBy(sh ? -10 : -1); else if (k === 'x' || k === 'X') obsBy(sh ? 10 : 1);
       else if (k === 't' || k === 'T') chrono(); else if (k === ' ') setPause(!running);
       else if (k === 'n' || k === 'N') newCase(); else if ('1234'.includes(k) && k.length === 1) { $$('#sts button')['1234'.indexOf(k)].click(); }
@@ -600,6 +866,6 @@
     return function destroy() { cancelAnimationFrame(raf); clearTimeout(nextTimer); document.removeEventListener('keydown', onKey); if (mq && mq.removeEventListener) mq.removeEventListener('change', onMq); };
   }
 
-  const API = { mount, readNav, lineDev, MAKERS, TYPES, makeState, physStep, advance };
+  const API = { mount, readNav, lineDev, MAKERS, TYPES, SIM_AC, makeState, physStep, advance, bearing, dist, placeOn };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.P2_SIM = API;
 })(typeof window !== 'undefined' ? window : globalThis);

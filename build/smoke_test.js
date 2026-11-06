@@ -44,7 +44,7 @@ setTimeout(() => {
     }
     // simulador: cada modo crea un caso, el instructor da la instrucción y los datos se actualizan
     click($('[data-view="simulador"]'));
-    for (const k of ['inb', 'outb', 'hold', 'arc', 'ils', 'cont']) { click($(`#smode [data-k="${k}"]`)); must($('#slog .lg') && $('#sinstr .sim-clr'), 'sim ' + k); }
+    for (const k of ['sid', 'inb', 'outb', 'rev', 'hold', 'arc', 'ils', 'vor', 'rnav', 'cont']) { click($(`#smode [data-k="${k}"]`)); must($('#slog .lg') && $('#sinstr .sim-clr'), 'sim ' + k); }
     click($('#sinst [data-k="cdi"]')); must($('#ci0'), 'DG + CDI'); click($('#sinst [data-k="hsi"]')); must(!$('#ci0'), 'HSI');
     console.log('simulador:', $('#sinstr .sim-clr').textContent.slice(0, 80));
     click($('[data-view="temario"]'));

@@ -43,7 +43,7 @@ python3 -c "import cairosvg,glob,os; [cairosvg.svg2png(url=f, write_to='build/di
 python3 build/build_pdf.py           # regenerar el PDF (requiere reportlab y los PNG de build/diagrams)
 node build/test_rules.js             # reglas y generadores
 node build/smoke_test.js             # tras npm i jsdom@24
-node build/sim_test.js               # simulador: ~800 vuelos simulados, unos segundos
+node build/sim_test.js               # simulador: ~1 500 vuelos simulados, menos de un minuto
 npx serve app                        # o abrir app/index.html directamente
 ```
 
@@ -59,34 +59,47 @@ npx serve app                        # o abrir app/index.html directamente
 
 ## Simulador
 
-Vista en planta del avión (norte arriba, zoom automático, estela y vector de derrota) con **HSI** o **DG + CDI**
-(a elegir), **RMI**, DME, velocidad, altitud y cronómetro. Cinco tipos de caso, cada uno con su evaluador:
+Vista en planta del avión (norte arriba, zoom automático, estela, vector de derrota y etiqueta de altitud y
+velocidad) con **HSI** o **DG + CDI** (a elegir), **RMI**, DME/GPS, IAS, TAS, GS, alabeo, transpondedor y cronómetro.
+Se vuela como con el **piloto automático**: rumbo, altitud, velocidad vertical y velocidad (IAS) seleccionados,
+más el OBS. Tres aviones: **Cessna 172** (hélice), **King Air 350** (turbohélice) y **Citation Mustang** (reactor);
+la TAS sale de la IAS con la regla del 2 % por cada 1 000 ft (aproximación, no viene del curso).
 
 | Caso | Qué se pide | Qué vigila el instructor |
 |---|---|---|
-| Radial · acercamiento | Interceptar un curso hacia el VOR (todas las bandas: 2P, 30°, hasta 90°, ruta pasada) | OBS, rumbo elegido frente a la regla del curso, ángulo de corte, pasarse del curso, deriva |
+| Salida (SID) | Rumbo de pista, viraje a cierta altitud e interceptar un radial con gradiente mínimo | Razón necesaria (GS × % × 1,013), virajes antes de 400 ft AGL o de la altitud de la SID, OBS |
+| Radial · acercamiento | Interceptar un curso hacia el VOR (2P, 30°, hasta 90°, ruta pasada) | OBS, rumbo frente a la regla, ángulo de corte, pasarse del curso, deriva |
 | Radial · alejamiento | Alejarse por un radial (P, 45°, ruta pasada) | Lo mismo con la cola |
-| Espera | Directo al fijo, entrada y un circuito | Entrada (por rumbo, sentido del viraje y lado), altitud, tiempo del acercamiento y corrección del alejamiento |
-| Arco DME | Radial → arco → curso de salida | DME del viraje (0,5 % GS), ± 0,5 NM con la corrección +10°/−5°, sentido, anticipo de salida en radiales |
-| ILS | Vectores, localizador y senda hasta la DA (a veces falla la senda) | No descender antes de establecido, razón de descenso, deflexión completa, mínimos; sin senda, MDA y MAPt |
+| Inversión | Viraje reglamentario 45°/180° | Lado del primer viraje, rumbo a 45°, minuto cronometrado, segundo viraje al lado contrario, interceptación |
+| Espera | Directo al fijo, entrada y un circuito | Entrada (rumbo, sentido del viraje y lado), **velocidad máxima del curso**, altitud, tiempo del acercamiento y corrección |
+| Arco DME | Radial → arco → curso de salida | DME del viraje (0,5 % GS), ± 0,5 NM con +10°/−5°, sentido, anticipo de salida |
+| ILS | Vectores, localizador y senda hasta la DA (a veces falla la senda) | No descender antes de establecido, razón, deflexión completa, DA; sin senda, MDA y MAPt |
+| VOR/DME | Interceptar el final, escalón hasta el FAF (D6), descenso a la MDA, MAPt en el VOR | Descenso prematuro, cruce del FAF, bajar de la MDA, llegar alto al MAPt |
+| RNAV | Aproximación en T desde un IAF lateral, LNAV (MDA) o LPV (DA) | Secuencia del GPS, escala del CDI (± 1 → ± 0,3 NM), altitudes de cada tramo, mínimos |
+
+**Eventos** (opcionales, en los casos en ruta, espera, arco, inversión y VOR/DME): fallo de comunicaciones
+(hay que poner **7600**), «ascienda/descienda y mantenga…» y «reduzca a … kt». El caso no termina hasta que el
+evento se ha atendido o ha vencido. Además, el instructor avisa si se usa el **7500** (prohibido en VATSIM) o el
+**7700** sin emergencia.
 
 Modo por tipo (al terminar, «Otro caso») o **Continuo** (cada caso resuelto da paso a otro al azar, con marcador
-y récord). Opciones: viento (sin/suave/moderado), TAS 90/120/150 kt, ayudas en el mapa (curso, arco, circuito,
-localizador), **ocultar el mapa (IMC)**, velocidad 1–8× y **Pista** (−10 puntos).
+y récord). Opciones: viento, avión, eventos, ayudas en el mapa, **ocultar el mapa (IMC)**, velocidad 1–8× y
+**Pista** (−10 puntos).
 
-Mandos: el avión vira a razón estándar **hacia el lado al que se mueve el selector de rumbo** (permite virajes
-de más de 180°, como en las entradas en espera); también se puede escribir un rumbo y elegir izquierda, derecha o
-el más corto. Teclado: ← → rumbo ±5° (Mayús ±1°) · Z/X OBS ∓1° (Mayús ±10°) · ↑ ↓ altitud ±100 ft ·
-Mayús ↑ ↓ régimen ±100 ft/min · T cronómetro · espacio pausa · 1–4 velocidad · N nuevo caso.
+Mandos: el avión vira a razón estándar **hacia el lado al que se mueve el selector de rumbo** (permite virajes de
+más de 180°); también se puede escribir un rumbo y elegir izquierda, derecha o el más corto. Teclado: ← → rumbo
+±5° (Mayús ±1°) · Z/X OBS ∓1° (Mayús ±10°) · ↑ ↓ altitud ±100 ft · Mayús ↑ ↓ régimen ±100 ft/min · Q/W velocidad
+∓5 kt (Mayús ±10) · T cronómetro · espacio pausa · 1–4 velocidad · N nuevo caso.
 
-El ILS ignora el OBS (como un localizador real): escala de ± 2,5° (1,25°/punto) y senda de 3° con ± 0,7°. El VOR
-usa ± 10° (5°/punto). Los casos se generan de forma que el corte con el curso quede a ≥ 4 NM de la estación y que
-el localizador se intercepte por debajo de la senda.
+Escalas: VOR ± 10° (5°/punto) · localizador ± 2,5° · senda y LPV ± 0,7° · GPS lineal en NM según el modo. El ILS y
+el GPS no dependen del OBS. Los casos se generan para que el corte con el curso quede a ≥ 4 NM de la estación y el
+localizador se intercepte por debajo de la senda.
 
-`build/sim_test.js` vuela cientos de casos con un piloto robot: los bien volados se resuelven (las esperas sin
-ningún reproche en la entrada) y los mal volados (entrada equivocada, arco al revés, descenso antes de establecido)
-reciben la corrección o fallan. Los pocos fallos tolerados son rutas pasadas con viento en las que el robot,
-que no corrige la deriva en ese tramo, se pasa del curso.
+`build/sim_test.js` vuela más de 1 500 casos con un piloto robot: los bien volados se resuelven en los tres aviones
+(las esperas sin ningún reproche en la entrada) y los mal volados (entrada equivocada, arco al revés, descenso
+anticipado, espera sin reducir, viraje antes de 400 ft, gradiente insuficiente, inversión por el lado contrario,
+eventos ignorados, 7500) reciben la corrección o fallan. Los pocos fallos tolerados son rutas pasadas con viento en
+las que el robot, que no corrige la deriva en ese tramo, se pasa del curso.
 
 ## Formato de escenario
 
@@ -130,5 +143,5 @@ escenarios, rachas de los entrenadores). En el Temario, «Tu progreso» permite 
 ## Ideas para seguir
 
 - Escenarios con cartas reales (SID/STAR/IAC de una división concreta) y un lector de IAC interactivo.
-- Simulador: inversión de curso / viraje reglamentario, aproximaciones VOR y RNAV, fallo de instrumentos en vuelo.
+- Simulador: fallo del indicador de rumbo con vectores sin giróscopo, frustradas completas con su espera, STAR con restricciones.
 - Un modo de examen cronometrado con el formato del examen teórico del P2 de VATSIM.
