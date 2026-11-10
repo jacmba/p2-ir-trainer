@@ -60,7 +60,10 @@ npx serve app                        # o abrir app/index.html directamente
 ## Simulador
 
 Vista en planta del avión (norte arriba, zoom automático, estela, vector de derrota y etiqueta de altitud y
-velocidad) con **HSI** o **DG + CDI** (a elegir), **RMI**, DME/GPS, IAS, TAS, GS, alabeo, transpondedor y cronómetro.
+velocidad) y panel básico de seis instrumentos en 2 × 3: **velocímetro** (arcos verde y amarillo y línea roja del
+avión) | **altímetro** (centenas, miles y ventana digital) · **horizonte artificial** (con HSI) o **CDI** | **variómetro**
+· **HSI** o **DG** | **RMI**. Las marcas rosas son los valores seleccionados en el piloto automático. Además, DME/GPS,
+TAS, GS, alabeo, transpondedor y cronómetro.
 Se vuela como con el **piloto automático**: rumbo, altitud, velocidad vertical y velocidad (IAS) seleccionados,
 más el OBS. Tres aviones: **Cessna 172** (hélice), **King Air 350** (turbohélice) y **Citation Mustang** (reactor);
 la TAS sale de la IAS con la regla del 2 % por cada 1 000 ft (aproximación, no viene del curso).
@@ -83,10 +86,11 @@ evento se ha atendido o ha vencido. Además, el instructor avisa si se usa el **
 **7700** sin emergencia.
 
 **Disposición**: en horizontal (escritorio, portátil, tablet apaisada) todo cabe en una pantalla sin desplazarse:
-barra con modos y controles de simulación arriba, instrucción, mapa e instrumentos a la izquierda, y a la derecha el
+barra con modos y controles de simulación arriba; instrucción y mapa a la izquierda, los seis instrumentos en el centro
+(su columna se dimensiona con el alto disponible) y a la derecha el
 panel de piloto automático (HDG, CRS/OBS, ALT, V/S, IAS, XPDR con el valor seleccionado), los datos reales y el
-registro del instructor. En vertical grande (tablet en vertical, monitor girado) el mapa va arriba, los instrumentos
-debajo y el piloto automático junto al instructor. En móvil se apila y se desplaza, con los instrumentos de dos en
+registro del instructor. En vertical grande (tablet en vertical, monitor girado) el mapa va arriba y debajo los
+instrumentos junto al piloto automático, los datos y el instructor. En móvil se apila y se desplaza, con los instrumentos de dos en
 dos. Las opciones (HSI o DG + CDI, avión, viento, eventos, ayudas, IMC y el teclado) están en «⚙ Ajustes». Abajo se
 reservan 52 px (`--sim-bottom`) para insignias fijas del alojamiento, como «Powered by Netlify».
 

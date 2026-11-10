@@ -574,8 +574,10 @@
     const cont = { solved: 0, failed: 0, pts: 0 };
 
     document.body.classList.add('simmode');
-    const instHTML = () => (cfg.inst === 'hsi' ? '<canvas id="ci1"></canvas>' : '<canvas id="ci0"></canvas><canvas id="ci1"></canvas>') + '<canvas id="ci2"></canvas>';
-    const apBtns = (attr, vals) => vals.map(v => `<button class="btn" data-${attr}="${v}">${v > 0 ? '+' : '−'}${Math.abs(v)}</button>`).join('');
+    // panel básico en 2 columnas × 3 filas: velocímetro | altímetro · horizonte (o CDI) | variómetro · HSI (o DG) | RMI
+    const instHTML = () => '<canvas id="casi"></canvas><canvas id="calt"></canvas>' + (cfg.inst === 'hsi' ? '<canvas id="cai"></canvas>' : '<canvas id="ci1"></canvas>') +
+      '<canvas id="cvsi"></canvas>' + (cfg.inst === 'hsi' ? '<canvas id="ci1"></canvas>' : '<canvas id="ci0"></canvas>') + '<canvas id="ci2"></canvas>';
+    const apBtns = (attr, vals) => vals.map(v => `<button class="btn" data-${attr}="${v}" title="${v > 0 ? '+' : '−'}${Math.abs(v)}">${v > 0 ? '+' : '−'}${Math.abs(v) >= 1000 ? Math.abs(v) / 1000 + 'k' : Math.abs(v)}</button>`).join('');
     VIEW.innerHTML = `<h1 class="sr-only">Simulador IFR</h1>
       <div class="sim" id="sim">
         <div class="sim-bar">
@@ -604,7 +606,7 @@
           <div class="simap" aria-label="Piloto automático">
             <div class="apm"><div class="aph"><span>HDG</span><b class="mono" id="vhdg">—</b></div><div class="apk">${apBtns('h', [-10, -1, 1, 10])}</div>
               <div class="apk"><button class="btn" data-dir="L" title="Virar por la izquierda al rumbo escrito">◀</button><input class="num" id="hin" inputmode="numeric" placeholder="rumbo" aria-label="Rumbo a seleccionar"><button class="btn" data-dir="R" title="Virar por la derecha al rumbo escrito">▶</button><button class="btn" data-dir="S" title="Virar por el lado más corto">corto</button></div></div>
-            <div class="apm"><div class="aph"><span>CRS · OBS</span><b class="mono" id="vcrs">—</b></div><div class="apk">${apBtns('o', [-10, -1, 1, 10])}</div>
+            <div class="apm"><div class="aph"><span>CRS</span><b class="mono" id="vcrs">—</b></div><div class="apk">${apBtns('o', [-10, -1, 1, 10])}</div>
               <div class="apk"><input class="num" id="oin" inputmode="numeric" placeholder="curso" aria-label="Curso del OBS"></div></div>
             <div class="apm"><div class="aph"><span>ALT</span><b class="mono" id="valt">—</b></div><div class="apk">${apBtns('a', [-1000, -100, 100, 1000])}</div></div>
             <div class="apm"><div class="aph"><span>V/S</span><b class="mono" id="vvs">—</b></div><div class="apk">${apBtns('v', [-100, 100])}</div></div>
@@ -791,6 +793,71 @@
       else { g.fillStyle = colors['inst-fg']; g.fillRect(cx + 18, n.to ? cy - 34 : cy + 16, 38, 18); g.fillStyle = colors['inst-bg']; g.font = '700 11px IBM Plex Mono, monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(n.to ? 'TO' : 'FROM', cx + 37, n.to ? cy - 25 : cy + 25); }
       label(g, cx, W + 18, n.ils ? `CDI · LOC ${H(crs)} (OBS ${H(s.obs)})` : n.gps ? `CDI · GPS DTK ${H(crs)}` : `CDI · OBS ${H(s.obs)}`);
     }
+    // ---------- velocímetro, altímetro, variómetro y horizonte artificial ----------
+    const PT = (a, rr, cx, cy) => [cx + Math.sin(rad(a)) * rr, cy - Math.cos(rad(a)) * rr];
+    function face(g, W) { const cx = W / 2, cy = W / 2, r = W / 2 - 14; g.clearRect(0, 0, W, W + 30); g.fillStyle = colors['inst-bg']; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill(); g.strokeStyle = colors['inst-ring']; g.lineWidth = 2; g.stroke(); return [cx, cy, r]; }
+    function tick(g, a, r1, r2, cx, cy, col, w) { const [x1, y1] = PT(a, r1, cx, cy), [x2, y2] = PT(a, r2, cx, cy); g.strokeStyle = col; g.lineWidth = w; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); }
+    function arcBand(g, a1, a2, rr, cx, cy, col, w) { g.strokeStyle = col; g.lineWidth = w; g.beginPath(); g.arc(cx, cy, rr, rad(a1 - 90), rad(a2 - 90)); g.stroke(); }
+    function txt(g, t, x, y, size, col, weight) { g.fillStyle = col || colors['inst-fg']; g.font = `${weight || 600} ${size}px IBM Plex Mono, monospace`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, x, y); }
+    function needle(g, a, len, cx, cy, col, w, tail) { const [x2, y2] = PT(a, len, cx, cy), [x1, y1] = PT(a + 180, tail || 0, cx, cy); g.strokeStyle = col; g.lineWidth = w; g.lineCap = 'round'; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); g.lineCap = 'butt'; }
+    function hub(g, cx, cy) { g.fillStyle = colors['inst-fg']; g.beginPath(); g.arc(cx, cy, 5, 0, Math.PI * 2); g.fill(); }
+    function bugAt(g, a, r, cx, cy) { g.save(); g.translate(cx, cy); g.rotate(rad(a)); g.fillStyle = '#f472b6'; g.fillRect(-5, -r + 1, 10, 6); g.restore(); }
+    function digi(g, t, cx, y, W) { g.font = '600 12px IBM Plex Mono, monospace'; const w = g.measureText(t).width + 10; g.fillStyle = '#000'; g.fillRect(cx - w / 2, y - 9, w, 18); g.strokeStyle = colors['inst-ring']; g.lineWidth = 1; g.strokeRect(cx - w / 2, y - 9, w, 18); txt(g, t, cx, y + 1, 12, colors['inst-fg']); }
+
+    // Velocímetro: arco verde (operación normal), amarillo (precaución) y línea roja (máxima) según el avión
+    function drawASI(c) {
+      const [g, W] = fit(c), [cx, cy, r] = face(g, W), at = s.acType;
+      const lo = Math.max(0, Math.floor(at.min * 0.6 / 10) * 10), hi = Math.ceil(at.max * 1.15 / 20) * 20, ang = v => -150 + (clamp(v, lo, hi) - lo) / (hi - lo) * 300;
+      const step = hi - lo > 200 ? 20 : 10, lab = hi - lo > 200 ? 40 : 20;
+      arcBand(g, ang(at.min), ang(at.max * 0.88), r - 7, cx, cy, '#22c55e', 6); arcBand(g, ang(at.max * 0.88), ang(at.max), r - 7, cx, cy, '#eab308', 6); tick(g, ang(at.max), r - 2, r - 16, cx, cy, '#ef4444', 3);
+      for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) { const big = v % lab === 0; tick(g, ang(v), r - 2, r - (big ? 13 : 8), cx, cy, colors['inst-fg'], big ? 2 : 1); if (big) { const [x, y] = PT(ang(v), r - 24, cx, cy); txt(g, String(v), x, y, 10); } }
+      bugAt(g, ang(s.iasSel), r, cx, cy);
+      txt(g, 'KT', cx, cy - r * 0.32, 10, colors['muted']); digi(g, String(Math.round(s.ac.ias)), cx, cy + r * 0.42, W);
+      needle(g, ang(s.ac.ias), r - 12, cx, cy, colors['inst-needle'], 3.5, 10); hub(g, cx, cy);
+      label(g, cx, W + 18, `ASI · ${Math.round(s.ac.ias)} kt · SEL ${s.iasSel}`);
+    }
+    // Altímetro: aguja larga = centenas, corta = miles; ventana digital y marca de la altitud seleccionada
+    function drawALT(c) {
+      const [g, W] = fit(c), [cx, cy, r] = face(g, W), alt = s.ac.alt;
+      for (let k = 0; k < 50; k++) { const big = k % 5 === 0; tick(g, k * 7.2, r - 2, r - (big ? 13 : 7), cx, cy, colors['inst-fg'], big ? 2 : 1); if (big) { const [x, y] = PT(k * 7.2, r - 24, cx, cy); txt(g, String(k / 5), x, y, 12); } }
+      bugAt(g, (s.altTarget % 1000) / 1000 * 360, r, cx, cy);
+      txt(g, 'ALT', cx, cy - r * 0.32, 10, colors['muted']); digi(g, Math.round(alt).toLocaleString('es-ES'), cx, cy + r * 0.42, W);
+      needle(g, (alt % 10000) / 10000 * 360, r * 0.5, cx, cy, colors['inst-fg'], 5, 6);
+      needle(g, (alt % 1000) / 1000 * 360, r - 14, cx, cy, colors['inst-needle'], 3, 10); hub(g, cx, cy);
+      label(g, cx, W + 18, `ALT · ${Math.round(alt).toLocaleString('es-ES')} ft · SEL ${s.altTarget.toLocaleString('es-ES')}`);
+    }
+    // Variómetro: 0 a la izquierda; ascenso hacia arriba y descenso hacia abajo, ± 2 000 ft/min
+    function drawVSI(c) {
+      const [g, W] = fit(c), [cx, cy, r] = face(g, W), ang = v => -90 + clamp(v, -2000, 2000) / 2000 * 170;
+      for (let v = -2000; v <= 2000; v += 100) { const big = v % 500 === 0; tick(g, ang(v), r - 2, r - (big ? 13 : 7), cx, cy, colors['inst-fg'], big ? 2 : 1); if (big) { const [x, y] = PT(ang(v), r - 24, cx, cy); txt(g, String(Math.abs(v) / 100), x, y, 11); } }
+      txt(g, 'UP', cx + r * 0.15, cy - r * 0.42, 10, colors['muted']); txt(g, 'DN', cx + r * 0.15, cy + r * 0.42, 10, colors['muted']); txt(g, '×100 ft/min', cx, cy + r * 0.2, 9, colors['muted'], 400);
+      const dir = Math.sign(s.altTarget - s.ac.alt); if (dir) bugAt(g, ang(dir * s.vsSel), r, cx, cy);
+      needle(g, ang(s.vs), r - 12, cx, cy, colors['inst-needle'], 3.5, 10); hub(g, cx, cy);
+      label(g, cx, W + 18, `VSI · ${s.vs > 0 ? '+' : ''}${Math.round(s.vs)} ft/min`);
+    }
+    // Horizonte artificial: alabeo del viraje estándar (10 % TAS + 5) y cabeceo a partir de la trayectoria
+    let bankVis = 0, pitchVis = 0;
+    function drawAI(c) {
+      const [g, W] = fit(c), cx = W / 2, cy = W / 2, r = W / 2 - 14;
+      const bankT = Math.abs(s.turn) > 0.3 ? Math.sign(s.turn) * R.bankStdTurn(s.ac.tas) : 0;
+      const pitchT = 2 + deg(Math.atan2(s.vs / 60, s.ac.tas * 1.6878));
+      bankVis += (bankT - bankVis) * 0.12; pitchVis += (pitchT - pitchVis) * 0.12;
+      const ppd = r / 30; // píxeles por grado de cabeceo
+      g.clearRect(0, 0, W, W + 30);
+      g.save(); g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.clip();
+      g.translate(cx, cy); g.rotate(rad(-bankVis)); g.translate(0, pitchVis * ppd);
+      g.fillStyle = '#2563eb'; g.fillRect(-2 * r, -3 * r, 4 * r, 3 * r); g.fillStyle = '#92400e'; g.fillRect(-2 * r, 0, 4 * r, 3 * r);
+      g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.moveTo(-2 * r, 0); g.lineTo(2 * r, 0); g.stroke();
+      g.lineWidth = 1.2; g.fillStyle = '#fff'; g.font = '600 9px IBM Plex Mono, monospace'; g.textAlign = 'left'; g.textBaseline = 'middle';
+      for (let p = -20; p <= 20; p += 5) { if (!p) continue; const y = -p * ppd, w = p % 10 === 0 ? r * 0.32 : r * 0.16; g.beginPath(); g.moveTo(-w, y); g.lineTo(w, y); g.stroke(); if (p % 10 === 0) g.fillText(String(Math.abs(p)), w + 3, y); }
+      g.restore();
+      g.strokeStyle = colors['inst-ring']; g.lineWidth = 2; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke();
+      for (const b of [-60, -45, -30, -20, -10, 0, 10, 20, 30, 45, 60]) tick(g, b, r - 1, r - (Math.abs(b) % 30 === 0 ? 13 : 8), cx, cy, '#fff', 2);
+      g.save(); g.translate(cx, cy); g.rotate(rad(-bankVis)); g.fillStyle = colors['inst-needle']; g.beginPath(); g.moveTo(0, -r + 14); g.lineTo(-6, -r + 24); g.lineTo(6, -r + 24); g.closePath(); g.fill(); g.restore();
+      g.strokeStyle = colors['inst-needle']; g.lineWidth = 4; g.beginPath(); g.moveTo(cx - r * 0.55, cy); g.lineTo(cx - r * 0.18, cy); g.lineTo(cx - r * 0.1, cy + 8); g.moveTo(cx + r * 0.55, cy); g.lineTo(cx + r * 0.18, cy); g.lineTo(cx + r * 0.1, cy + 8); g.stroke();
+      g.fillStyle = colors['inst-needle']; g.beginPath(); g.arc(cx, cy, 3.5, 0, Math.PI * 2); g.fill();
+      label(g, cx, W + 18, `AI · alabeo ${Math.round(Math.abs(bankVis))}° · cabeceo ${pitchVis >= 0 ? '+' : ''}${pitchVis.toFixed(0)}°`);
+    }
     function drawRMI(c, n) {
       const [g, W] = fit(c); const cx = W / 2, cy = W / 2, r = W / 2 - 14;
       g.clearRect(0, 0, W, W + 30); card(g, cx, cy, r, s.ac.hdg);
@@ -806,15 +873,18 @@
       if (canDraw) drawMap();
       if (!s) return;
       const n = readNav(s);
-      if (canDraw) { if (cfg.inst === 'hsi') drawHSI($('#ci1'), n); else { drawDG($('#ci0')); drawCDI($('#ci1'), n); } drawRMI($('#ci2'), n); }
+      if (canDraw) {
+        drawASI($('#casi')); drawALT($('#calt')); drawVSI($('#cvsi'));
+        if (cfg.inst === 'hsi') { drawAI($('#cai')); drawHSI($('#ci1'), n); } else { drawDG($('#ci0')); drawCDI($('#ci1'), n); }
+        drawRMI($('#ci2'), n);
+      }
       const now = performance.now(); if (now - dataT < 150) return; dataT = now;
       const ch = s.chrono, ct = ch.acc + (ch.st === 'run' ? s.t - ch.t0 : 0);
       $('#schrono').textContent = '⏱ ' + mmss(ct); $('#schrono').dataset.st = ch.st;
-      $('#vhdg').textContent = H(s.ac.hdg + s.turn); $('#vcrs').textContent = H(n.crs) + (n.ils ? ' LOC' : n.gps ? ' GPS' : ''); $('#valt').textContent = s.altTarget.toLocaleString('es-ES');
+      $('#vhdg').textContent = H(s.ac.hdg + s.turn); $('#vcrs').innerHTML = H(n.crs) + (n.ils ? '<small> LOC</small>' : n.gps ? '<small> GPS</small>' : ''); $('#valt').textContent = s.altTarget.toLocaleString('es-ES');
       $('#vvs').textContent = s.vsSel; $('#vias').textContent = s.iasSel; $('#sqcur').textContent = s.sq;
-      const vsTxt = s.vs ? (s.vs > 0 ? '+' : '') + Math.round(s.vs) : '0';
       const bank = Math.abs(s.turn) > 0.3 ? R.bankStdTurn(s.ac.tas) : 0;
-      $('#sdata').innerHTML = [[n.gps ? 'GPS ' + n.wp : 'DME', fmt1(n.dme) + ' NM'], ['IAS', Math.round(s.ac.ias) + ' kt'], ['TAS · GS', Math.round(s.ac.tas) + ' · ' + Math.round(s.gs)], ['ALT', Math.round(s.ac.alt).toLocaleString('es-ES') + ' ft'], ['V/S', vsTxt + ' ft/min'], ['HDG · TRK', H(s.ac.hdg) + ' · ' + H(s.track)], ['Alabeo', bank ? bank + '°' : '0°'], ['Viento', s.wind.spd ? H(s.wind.dir) + '/' + s.wind.spd : 'calma'], ['Tiempo', mmss(s.t)]]
+      $('#sdata').innerHTML = [[n.gps ? 'GPS ' + n.wp : 'DME', fmt1(n.dme) + ' NM'], ['TAS · GS', Math.round(s.ac.tas) + ' · ' + Math.round(s.gs) + ' kt'], ['HDG · TRK', H(s.ac.hdg) + ' · ' + H(s.track)], ['Alabeo', bank ? bank + '°' : '0°'], ['Viento', s.wind.spd ? H(s.wind.dir) + '/' + s.wind.spd : 'calma'], ['Tiempo', mmss(s.t)]]
         .map(([k, v]) => `<div><span>${k}</span><b class="mono">${v}</b></div>`).join('');
       cHud.textContent = ended ? '' : (running ? '' : (s.t ? 'PAUSA' : 'Pulsa Empezar (espacio)'));
     }
