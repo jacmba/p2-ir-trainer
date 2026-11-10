@@ -82,6 +82,14 @@ la TAS sale de la IAS con la regla del 2 % por cada 1 000 ft (aproximación, no 
 evento se ha atendido o ha vencido. Además, el instructor avisa si se usa el **7500** (prohibido en VATSIM) o el
 **7700** sin emergencia.
 
+**Disposición**: en horizontal (escritorio, portátil, tablet apaisada) todo cabe en una pantalla sin desplazarse:
+barra con modos y controles de simulación arriba, instrucción, mapa e instrumentos a la izquierda, y a la derecha el
+panel de piloto automático (HDG, CRS/OBS, ALT, V/S, IAS, XPDR con el valor seleccionado), los datos reales y el
+registro del instructor. En vertical grande (tablet en vertical, monitor girado) el mapa va arriba, los instrumentos
+debajo y el piloto automático junto al instructor. En móvil se apila y se desplaza, con los instrumentos de dos en
+dos. Las opciones (HSI o DG + CDI, avión, viento, eventos, ayudas, IMC y el teclado) están en «⚙ Ajustes». Abajo se
+reservan 52 px (`--sim-bottom`) para insignias fijas del alojamiento, como «Powered by Netlify».
+
 Modo por tipo (al terminar, «Otro caso») o **Continuo** (cada caso resuelto da paso a otro al azar, con marcador
 y récord). Opciones: viento, avión, eventos, ayudas en el mapa, **ocultar el mapa (IMC)**, velocidad 1–8× y
 **Pista** (−10 puntos).

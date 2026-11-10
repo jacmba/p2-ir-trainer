@@ -16,7 +16,7 @@ function track(s, P, crs, k) { // con corrección de deriva (rumbo − derrota) 
 function fly(type, pilot, opt) {
   opt = opt || {};
   const c = S.MAKERS[type](); if (opt.mod) opt.mod(c);
-  const s = S.makeState(c, { ac: opt.ac || 'c172', wind: opt.wind || 0, windDir: opt.windDir || 0, events: !!opt.eventKind, eventRate: 1, eventKind: opt.eventKind });
+  const s = S.makeState(c, { ac: opt.ac || 'c172', wind: opt.wind || 0, windDir: opt.windDir || 0, events: !!opt.eventKind, eventRate: 1, eventKind: opt.eventKind, eventAt: opt.eventKind ? 12 : 0 });
   const log = []; const say = (k, t) => log.push(k + ' ' + t); const mem = {};
   for (let i = 0; i < 1700; i++) { // hasta 1 700 s
     pilot(s, S.readNav(s), mem, c);

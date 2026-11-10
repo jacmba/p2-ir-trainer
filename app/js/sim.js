@@ -509,7 +509,7 @@
     s.hdgStart = s.ac.hdg;
     const can = ['inb', 'outb', 'rev', 'hold', 'arc', 'vor'].includes(c.type);
     const evt = opt.events && can && Math.random() < (opt.eventRate == null ? 0.6 : opt.eventRate)
-      ? { t: rint(20, 60), kind: opt.eventKind || pick(c.type === 'vor' ? ['com'] : ['com', 'alt', 'spd']) } : null;
+      ? { t: opt.eventAt || rint(20, 60), kind: opt.eventKind || pick(c.type === 'vor' ? ['com'] : ['com', 'alt', 'spd']) } : null;
     s.evt = evt; s.ev = withEvents(c.ev, evt); return s;
   }
   // eventos y transpondedor: fallo de comunicaciones (7600), instrucciones del ATC y códigos que no proceden
@@ -573,45 +573,46 @@
     let s = null, raf = 0, last = 0, running = false, ended = false, logN = 0, nextTimer = 0;
     const cont = { solved: 0, failed: 0, pts: 0 };
 
-    VIEW.innerHTML = `<div class="view-head"><div><div class="eyebrow">Simulador IFR · ${Object.keys(TYPES).length} tipos de caso</div><h1>Simulador</h1>
-        <p>Tu avión visto desde arriba con los instrumentos básicos. Se vuela como con el piloto automático: rumbo, altitud, velocidad vertical y velocidad seleccionados, más el OBS. Sigue la instrucción y atiende al instructor.</p></div></div>
-      <div class="sim-top">
-        <div class="seg" id="smode">${Object.entries(TYPES).map(([k, l]) => `<button data-k="${k}" aria-pressed="${cfg.mode === k}">${l.replace('Radial en ', 'Radial · ').replace('Aproximación ', '').replace('Viraje reglamentario', 'Inversión')}</button>`).join('')}<button data-k="cont" aria-pressed="${cfg.mode === 'cont'}">Continuo</button></div>
-        <div class="row small">
-          <div class="seg" id="sinst"><button data-k="hsi" aria-pressed="${cfg.inst === 'hsi'}">HSI</button><button data-k="cdi" aria-pressed="${cfg.inst === 'cdi'}">DG + CDI</button></div>
-          <label class="chip">Viento <select id="swind">${[[0, 'sin'], [10, 'suave'], [20, 'moderado']].map(([v, l]) => `<option value="${v}" ${cfg.wind == v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-          <label class="chip">Avión <select id="sac">${Object.entries(SIM_AC).map(([k, a]) => `<option value="${k}" ${cfg.ac === k ? 'selected' : ''}>${a.name} (${a.kind})</option>`).join('')}</select></label>
-          <label class="chip" title="Fallo de comunicaciones e instrucciones del ATC durante el caso"><input type="checkbox" id="sevt" ${cfg.events ? 'checked' : ''}> Eventos</label>
-          <label class="chip"><input type="checkbox" id="shelp" ${cfg.help ? 'checked' : ''}> Ayudas en el mapa</label>
-          <label class="chip"><input type="checkbox" id="simc" ${cfg.imc ? 'checked' : ''}> Ocultar mapa (IMC)</label>
-        </div>
-      </div>
-      <div class="simgrid">
-        <div class="simleft">
-          <div class="sim-instr" id="sinstr"></div>
-          <div class="simmap"><canvas id="smap"></canvas><div class="sim-hud" id="shud"></div></div>
-          <div class="sim-ctl">
-            <div class="row"><button class="btn" id="spause">▶ Empezar</button>
-              <div class="seg" id="sts">${[1, 2, 4, 8].map(v => `<button data-k="${v}" aria-pressed="${cfg.tscale === v}">${v}×</button>`).join('')}</div>
-              <button class="btn" id="snew">Nuevo caso</button><button class="btn ghost" id="shint">Pista (−10)</button>
-              <button class="btn sim-chrono" id="schrono" title="Cronómetro (T): inicia, para y pone a cero">⏱ 0:00</button></div>
-            <details class="help small"><summary>Teclado</summary><p class="muted" style="margin:6px 0 0">← → rumbo seleccionado ±5° (Mayús ±1°; el avión vira hacia el lado al que mueves el selector) · Z / X OBS ∓1° (Mayús ±10°) · ↑ ↓ altitud ±100 ft · Mayús ↑ ↓ régimen ±100 ft/min · Q / W velocidad ∓5 kt (Mayús ±10) · T cronómetro · Espacio pausa · 1–4 velocidad · N nuevo caso</p></details>
+    document.body.classList.add('simmode');
+    const instHTML = () => (cfg.inst === 'hsi' ? '<canvas id="ci1"></canvas>' : '<canvas id="ci0"></canvas><canvas id="ci1"></canvas>') + '<canvas id="ci2"></canvas>';
+    const apBtns = (attr, vals) => vals.map(v => `<button class="btn" data-${attr}="${v}">${v > 0 ? '+' : '−'}${Math.abs(v)}</button>`).join('');
+    VIEW.innerHTML = `<h1 class="sr-only">Simulador IFR</h1>
+      <div class="sim" id="sim">
+        <div class="sim-bar">
+          <div class="seg sim-modes" id="smode">${Object.entries(TYPES).map(([k, l]) => `<button data-k="${k}" aria-pressed="${cfg.mode === k}">${l.replace('Radial en acercamiento', 'Acercamiento').replace('Radial en alejamiento', 'Alejamiento').replace('Aproximación ', '').replace('Viraje reglamentario', 'Inversión').replace('Salida (SID)', 'SID')}</button>`).join('')}<button data-k="cont" aria-pressed="${cfg.mode === 'cont'}">Continuo</button></div>
+          <div class="sim-actions">
+            <button class="btn primary" id="spause">▶ Empezar</button>
+            <div class="seg" id="sts">${[1, 2, 4, 8].map(v => `<button data-k="${v}" aria-pressed="${cfg.tscale === v}">${v}×</button>`).join('')}</div>
+            <button class="btn sim-chrono" id="schrono" title="Cronómetro (T): inicia, para y pone a cero">⏱ 0:00</button>
+            <button class="btn" id="snew" title="Nuevo caso (N)">Nuevo</button><button class="btn ghost" id="shint">Pista −10</button>
+            <div class="sim-opts"><button class="btn" id="sopt" aria-expanded="false" aria-controls="smenu">⚙ Ajustes</button>
+              <div class="sim-menu" id="smenu" hidden>
+                <div class="seg" id="sinst"><button data-k="hsi" aria-pressed="${cfg.inst === 'hsi'}">HSI</button><button data-k="cdi" aria-pressed="${cfg.inst === 'cdi'}">DG + CDI</button></div>
+                <label>Avión <select id="sac">${Object.entries(SIM_AC).map(([k, a]) => `<option value="${k}" ${cfg.ac === k ? 'selected' : ''}>${a.name} (${a.kind})</option>`).join('')}</select></label>
+                <label>Viento <select id="swind">${[[0, 'sin viento'], [10, 'suave (10 kt)'], [20, 'moderado (20 kt)']].map(([v, l]) => `<option value="${v}" ${cfg.wind == v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+                <label title="Fallo de comunicaciones e instrucciones del ATC durante el caso"><input type="checkbox" id="sevt" ${cfg.events ? 'checked' : ''}> Eventos (ATC y fallos)</label>
+                <label><input type="checkbox" id="shelp" ${cfg.help ? 'checked' : ''}> Ayudas en el mapa</label>
+                <label><input type="checkbox" id="simc" ${cfg.imc ? 'checked' : ''}> Ocultar mapa (IMC)</label>
+                <p class="small muted" style="margin:4px 0 0;white-space:normal;max-width:300px"><b>Teclado:</b> ← → rumbo ±5° (Mayús ±1°; el avión vira hacia el lado al que mueves el selector) · Z/X OBS ∓1° (Mayús ±10°) · ↑ ↓ altitud ±100 ft · Mayús ↑ ↓ V/S ±100 · Q/W velocidad ∓5 kt (Mayús ±10) · T cronómetro · espacio pausa · 1–4 velocidad · N nuevo caso</p>
+              </div></div>
           </div>
-          <div class="simlog" id="slog" aria-live="polite"></div>
-          <div class="small muted" id="sscore"></div>
         </div>
-        <div class="simright">
-          <div class="siminst">${cfg.inst === 'hsi' ? '<canvas id="ci1"></canvas>' : '<canvas id="ci0"></canvas><canvas id="ci1"></canvas>'}<canvas id="ci2"></canvas></div>
+        <div class="sim-instr" id="sinstr"></div>
+        <div class="simmap"><canvas id="smap"></canvas><div class="sim-hud" id="shud"></div></div>
+        <div class="siminst" id="sinstbox">${instHTML()}</div>
+        <div class="simside">
+          <div class="simap" aria-label="Piloto automático">
+            <div class="apm"><div class="aph"><span>HDG</span><b class="mono" id="vhdg">—</b></div><div class="apk">${apBtns('h', [-10, -1, 1, 10])}</div>
+              <div class="apk"><button class="btn" data-dir="L" title="Virar por la izquierda al rumbo escrito">◀</button><input class="num" id="hin" inputmode="numeric" placeholder="rumbo" aria-label="Rumbo a seleccionar"><button class="btn" data-dir="R" title="Virar por la derecha al rumbo escrito">▶</button><button class="btn" data-dir="S" title="Virar por el lado más corto">corto</button></div></div>
+            <div class="apm"><div class="aph"><span>CRS · OBS</span><b class="mono" id="vcrs">—</b></div><div class="apk">${apBtns('o', [-10, -1, 1, 10])}</div>
+              <div class="apk"><input class="num" id="oin" inputmode="numeric" placeholder="curso" aria-label="Curso del OBS"></div></div>
+            <div class="apm"><div class="aph"><span>ALT</span><b class="mono" id="valt">—</b></div><div class="apk">${apBtns('a', [-1000, -100, 100, 1000])}</div></div>
+            <div class="apm"><div class="aph"><span>V/S</span><b class="mono" id="vvs">—</b></div><div class="apk">${apBtns('v', [-100, 100])}</div></div>
+            <div class="apm"><div class="aph"><span>IAS</span><b class="mono" id="vias">—</b></div><div class="apk">${apBtns('s', [-10, -5, 5, 10])}</div></div>
+            <div class="apm"><div class="aph"><span>XPDR</span><b class="mono" id="sqcur">—</b></div><div class="apk"><input class="num" id="sqin" inputmode="numeric" maxlength="4" placeholder="7000" aria-label="Código del transpondedor"><button class="btn" id="sqset">Squawk</button></div></div>
+          </div>
           <div class="simdata" id="sdata"></div>
-          <div class="simknobs">
-            <div><span class="eyebrow">Rumbo</span><div class="row"><button class="btn" data-h="-10">−10</button><button class="btn" data-h="-1">−1</button><input class="num" id="hin" inputmode="numeric" placeholder="000"><button class="btn" data-h="1">+1</button><button class="btn" data-h="10">+10</button></div>
-              <div class="row" style="margin-top:4px"><button class="btn" data-dir="L">◀ por la izquierda</button><button class="btn" data-dir="S">el más corto</button><button class="btn" data-dir="R">por la derecha ▶</button></div></div>
-            <div><span class="eyebrow">OBS / curso</span><div class="row"><button class="btn" data-o="-10">−10</button><button class="btn" data-o="-1">−1</button><input class="num" id="oin" inputmode="numeric" placeholder="000"><button class="btn" data-o="1">+1</button><button class="btn" data-o="10">+10</button></div></div>
-            <div><span class="eyebrow">Altitud · régimen</span><div class="row"><button class="btn" data-a="-1000">−1000</button><button class="btn" data-a="-100">−100 ft</button><button class="btn" data-a="100">+100 ft</button><button class="btn" data-a="1000">+1000</button></div>
-              <div class="row" style="margin-top:4px"><button class="btn" data-v="-100">−100 fpm</button><button class="btn" data-v="100">+100 fpm</button></div></div>
-            <div><span class="eyebrow">Velocidad (IAS)</span><div class="row"><button class="btn" data-s="-10">−10 kt</button><button class="btn" data-s="-5">−5</button><button class="btn" data-s="5">+5</button><button class="btn" data-s="10">+10 kt</button></div></div>
-            <div><span class="eyebrow">Transpondedor</span><div class="row"><input class="num" id="sqin" inputmode="numeric" maxlength="4" placeholder="7000"><button class="btn" id="sqset">Squawk</button><span class="mono small" id="sqcur"></span></div></div>
-          </div>
+          <div class="simlog" id="slog" aria-live="polite"></div>
         </div>
       </div>`;
     const $ = q => VIEW.querySelector(q), $$ = q => Array.from(VIEW.querySelectorAll(q));
@@ -642,9 +643,9 @@
     }
     function renderInstr() {
       if (!s) return;
-      $('#sinstr').innerHTML = `<span class="eyebrow">${esc(TYPES[s.c.type])}${cfg.mode === 'cont' ? ' · modo continuo' : ''}</span><div class="sim-clr">«${esc(s.c.brief)}»</div>${s.hint ? `<div class="small" style="margin-top:4px"><b>Pista:</b> ${esc(s.c.hint)}</div>` : ''}`;
       const b = best[s.c.type];
-      $('#sscore').innerHTML = cfg.mode === 'cont' ? `Continuo: <b>${cont.solved}</b> resueltos · <b>${cont.failed}</b> fallidos · <b>${cont.pts}</b> puntos${best.cont ? ` · récord ${best.cont}` : ''}` : (b ? `Mejor puntuación en este tipo: ${b}` : '');
+      const score = cfg.mode === 'cont' ? `Continuo: <b>${cont.solved}</b> resueltos · <b>${cont.failed}</b> fallidos · <b>${cont.pts}</b> puntos${best.cont ? ` · récord ${best.cont}` : ''}` : (b ? `Mejor: ${b} puntos` : '');
+      $('#sinstr').innerHTML = `<div class="sim-ih"><span class="eyebrow">${esc(TYPES[s.c.type])} · ${esc(s.acType.name)}</span><span class="small muted" id="sscore">${score}</span></div><div class="sim-clr">«${esc(s.c.brief)}»</div>${s.hint ? `<div class="small" style="margin-top:4px"><b>Pista:</b> ${esc(s.c.hint)}</div>` : ''}`;
     }
     function finish(r) {
       ended = true; running = false;
@@ -808,10 +809,12 @@
       if (canDraw) { if (cfg.inst === 'hsi') drawHSI($('#ci1'), n); else { drawDG($('#ci0')); drawCDI($('#ci1'), n); } drawRMI($('#ci2'), n); }
       const now = performance.now(); if (now - dataT < 150) return; dataT = now;
       const ch = s.chrono, ct = ch.acc + (ch.st === 'run' ? s.t - ch.t0 : 0);
-      $('#schrono').textContent = '⏱ ' + mmss(ct); $('#schrono').dataset.st = ch.st; $('#sqcur').textContent = 'actual ' + s.sq;
+      $('#schrono').textContent = '⏱ ' + mmss(ct); $('#schrono').dataset.st = ch.st;
+      $('#vhdg').textContent = H(s.ac.hdg + s.turn); $('#vcrs').textContent = H(n.crs) + (n.ils ? ' LOC' : n.gps ? ' GPS' : ''); $('#valt').textContent = s.altTarget.toLocaleString('es-ES');
+      $('#vvs').textContent = s.vsSel; $('#vias').textContent = s.iasSel; $('#sqcur').textContent = s.sq;
       const vsTxt = s.vs ? (s.vs > 0 ? '+' : '') + Math.round(s.vs) : '0';
       const bank = Math.abs(s.turn) > 0.3 ? R.bankStdTurn(s.ac.tas) : 0;
-      $('#sdata').innerHTML = [[n.gps ? 'GPS ' + n.wp : 'DME', fmt1(n.dme) + ' NM'], ['IAS', Math.round(s.ac.ias) + ' → ' + s.iasSel + ' kt'], ['TAS · GS', Math.round(s.ac.tas) + ' · ' + Math.round(s.gs) + ' kt'], ['ALT', Math.round(s.ac.alt).toLocaleString('es-ES') + ' ft'], ['ALT SEL', s.altTarget.toLocaleString('es-ES') + ' ft'], ['V/S', vsTxt + ' · sel ' + s.vsSel], ['HDG', H(s.ac.hdg) + ' → ' + H(s.ac.hdg + s.turn)], ['TRK', H(s.track)], ['Alabeo', bank ? bank + '°' : '0°'], [n.ils ? 'LOC' : n.gps ? 'DTK' : 'OBS', H(n.crs)], ['SQ', s.sq], ['Tiempo', mmss(s.t)]]
+      $('#sdata').innerHTML = [[n.gps ? 'GPS ' + n.wp : 'DME', fmt1(n.dme) + ' NM'], ['IAS', Math.round(s.ac.ias) + ' kt'], ['TAS · GS', Math.round(s.ac.tas) + ' · ' + Math.round(s.gs)], ['ALT', Math.round(s.ac.alt).toLocaleString('es-ES') + ' ft'], ['V/S', vsTxt + ' ft/min'], ['HDG · TRK', H(s.ac.hdg) + ' · ' + H(s.track)], ['Alabeo', bank ? bank + '°' : '0°'], ['Viento', s.wind.spd ? H(s.wind.dir) + '/' + s.wind.spd : 'calma'], ['Tiempo', mmss(s.t)]]
         .map(([k, v]) => `<div><span>${k}</span><b class="mono">${v}</b></div>`).join('');
       cHud.textContent = ended ? '' : (running ? '' : (s.t ? 'PAUSA' : 'Pulsa Empezar (espacio)'));
     }
@@ -840,7 +843,12 @@
     $('#shint').onclick = () => { if (s && !s.hint) { s.hint = true; s.penal += 10; renderInstr(); say('tip', s.c.hint); } };
     $('#schrono').onclick = chrono;
     $$('#smode button').forEach(b => b.onclick = () => { cfg.mode = b.dataset.k; saveCfg(); $$('#smode button').forEach(x => x.setAttribute('aria-pressed', x === b)); cont.solved = cont.failed = cont.pts = 0; newCase(); });
-    $$('#sinst button').forEach(b => b.onclick = () => { cfg.inst = b.dataset.k; saveCfg(); $$('#sinst button').forEach(x => x.setAttribute('aria-pressed', x === b)); $('.siminst').innerHTML = (cfg.inst === 'hsi' ? '<canvas id="ci1"></canvas>' : '<canvas id="ci0"></canvas><canvas id="ci1"></canvas>') + '<canvas id="ci2"></canvas>'; });
+    $$('#sinst button').forEach(b => b.onclick = () => { cfg.inst = b.dataset.k; saveCfg(); $$('#sinst button').forEach(x => x.setAttribute('aria-pressed', x === b)); $('#sinstbox').innerHTML = instHTML(); $('#sinstbox').dataset.n = cfg.inst === 'hsi' ? 2 : 3; });
+    const menu = $('#smenu'), optBtn = $('#sopt');
+    const setMenu = open => { menu.hidden = !open; optBtn.setAttribute('aria-expanded', open); };
+    optBtn.onclick = e => { e.stopPropagation(); setMenu(menu.hidden); };
+    const onDocClick = e => { if (!menu.hidden && !e.target.closest('.sim-opts')) setMenu(false); };
+    document.addEventListener('click', onDocClick);
     $$('#sts button').forEach(b => b.onclick = () => { cfg.tscale = +b.dataset.k; saveCfg(); $$('#sts button').forEach(x => x.setAttribute('aria-pressed', x === b)); });
     $('#swind').onchange = e => { cfg.wind = +e.target.value; saveCfg(); say('info', 'El viento se aplica desde el próximo caso.'); };
     $('#sac').onchange = e => { cfg.ac = e.target.value; saveCfg(); if (s && s.t === 0) newCase(s.c.type); else say('info', 'El avión cambia desde el próximo caso.'); };
@@ -863,7 +871,11 @@
     const mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null; const onMq = () => readColors(); if (mq && mq.addEventListener) mq.addEventListener('change', onMq);
     newCase(cfg.mode === 'cont' ? null : cfg.mode); setPause(false);
     raf = requestAnimationFrame(loop);
-    return function destroy() { cancelAnimationFrame(raf); clearTimeout(nextTimer); document.removeEventListener('keydown', onKey); if (mq && mq.removeEventListener) mq.removeEventListener('change', onMq); };
+    $('#sinstbox').dataset.n = cfg.inst === 'hsi' ? 2 : 3;
+    // alto disponible: lo que queda por debajo de la cabecera (la barra superior en móvil/tablet)
+    const simEl = $('#sim'), sizeVar = () => simEl.style.setProperty('--simtop', Math.max(0, simEl.getBoundingClientRect().top + window.scrollY) + 'px');
+    sizeVar(); window.addEventListener('resize', sizeVar);
+    return function destroy() { window.removeEventListener('resize', sizeVar); document.body.classList.remove('simmode'); document.removeEventListener('click', onDocClick); cancelAnimationFrame(raf); clearTimeout(nextTimer); document.removeEventListener('keydown', onKey); if (mq && mq.removeEventListener) mq.removeEventListener('change', onMq); };
   }
 
   const API = { mount, readNav, lineDev, MAKERS, TYPES, SIM_AC, makeState, physStep, advance, bearing, dist, placeOn };
